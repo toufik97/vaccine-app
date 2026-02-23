@@ -1,0 +1,21 @@
+{
+    "dark_mode": true,
+    "fold_by_default": true,
+    "secteurs": [
+        "Secteur A",
+        "Secteur B",
+        "Secteur C",
+        "Hors Secteur"
+    ],
+    "center_schedule": {
+        "default": [
+            2
+        ],
+        "BCG": [
+            0
+        ],
+        "RR1": [
+            2
+        ]
+    }
+}
