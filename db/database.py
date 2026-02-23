@@ -1,60 +1,10 @@
 import sqlite3
-import math
-import csv
-import os
-import json # <-- NEW
 from datetime import datetime, timedelta
 
-class VaxEngine:
-    def __init__(self):
-        self.db_path = 'vax_pro.db'
+class Database:
+    def __init__(self, db_path='vax_pro.db'):
+        self.db_path = db_path
         self.setup_db()
-        
-        # --- NEW: Load from JSON instead of hardcoding ---
-        self.load_protocols()
-        # -------------------------------------------------
-        
-        # Chargement des données OMS en mémoire au démarrage
-        self.who_data = self.load_who_data()
-    
-    def load_protocols(self):
-        protocol_file = 'protocols.json'
-        
-        if os.path.exists(protocol_file):
-            with open(protocol_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # Ensure milestones are tuples (Name, Days, [Vaccines]) as expected by the GUI
-                self.milestones = [(m[0], m[1], m[2]) for m in data.get("milestones", [])]
-                self.dependencies = data.get("dependencies", {})
-        else:
-            # Fallback default protocols if the file is missing
-            self.milestones = [
-                ("Naissance", 0, ["BCG", "VPO Zéro", "HB Zéro", "Vit D1"]),
-                ("2 Mois", 60, ["Pentavalent 1", "VPO1", "Rota1", "Pneumo1"]),
-                ("3 Mois", 90, ["Pentavalent 2", "VPO2", "Rota2"]),
-                ("4 Mois", 120, ["Pentavalent 3", "VPO3", "Pneumo2", "VPI", "Rota3"]),
-                ("6 Mois", 183, ["Vit D2", "Vit A1"]),
-                ("9 Mois", 274, ["RR1"]),
-                ("12 Mois", 365, ["Pneumo3", "Vit A2"]),
-                ("18 Mois", 548, ["RR2", "Rappel DTC", "VPO (18 Mois)", "Vit A3"]),
-                ("5 Ans", 1825, ["Rappel DTC", "VPO (5 Ans)"])
-            ]
-            self.dependencies = {
-                "Pentavalent 2": ["Pentavalent 1", 28],
-                "Pentavalent 3": ["Pentavalent 2", 28],
-                "VPO2": ["VPO1", 28],
-                "VPO3": ["VPO2", 28],
-                "Rota2": ["Rota1", 28],
-                "Rota3": ["Rota2", 28],
-                "Pneumo2": ["Pneumo1", 56],    
-                "Pneumo3": ["Pneumo2", 180],   
-                "RR2": ["RR1", 180],           
-                "Rappel DTC": ["Pentavalent 3", 365], 
-                "VPO (18 Mois)": ["VPO3", 365]
-            }
-            # Auto-generate the JSON file for future editing
-            with open(protocol_file, 'w', encoding='utf-8') as f:
-                json.dump({"milestones": self.milestones, "dependencies": self.dependencies}, f, indent=4, ensure_ascii=False)
 
     def setup_db(self):
         conn = sqlite3.connect(self.db_path)
@@ -95,125 +45,6 @@ class VaxEngine:
         conn.commit()
         conn.close()
 
-    # --- MÉTHODES POUR LES Z-SCORES (OMS) ---
-    def load_who_data(self):
-        data = {"Poids": {}, "Taille": {}, "IMC": {}}
-        files = {
-            "Poids": {"Masculin": "oms_data/weight_boy.csv", "Féminin": "oms_data/weight_girl.csv"},
-            "Taille": {"Masculin": "oms_data/height_boy.csv", "Féminin": "oms_data/height_girl.csv"},
-            "IMC": {"Masculin": "oms_data/bmi_boy.csv", "Féminin": "oms_data/bmi_girl.csv"}
-        }
-
-        for metric, sexes in files.items():
-            for sexe, filepath in sexes.items():
-                data[metric][sexe] = {}
-                if os.path.exists(filepath):
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        reader = csv.DictReader(f)
-                        for row in reader:
-                            day = int(row['Day'])
-                            data[metric][sexe][day] = {
-                                "L": float(row['L']), 
-                                "M": float(row['M']), 
-                                "S": float(row['S'])
-                            }
-        return data
-
-    def calculate_lms_zscore(self, measure, l, m, s):
-        if measure <= 0: return None
-        try:
-            if l == 0: z = math.log(measure / m) / s
-            else: z = ((measure / m) ** l - 1) / (l * s)
-            return round(z, 2)
-        except Exception:
-            return None
-
-    def get_visit_zscores(self, p_id, visit_date_str, weight, height, imc):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT dob, sexe FROM patients WHERE id_label = ?", (p_id,))
-        patient = cursor.fetchone()
-        conn.close()
-        
-        if not patient: return None, None, None
-        
-        dob_str, sexe = patient
-        dob_obj = datetime.strptime(dob_str, "%Y-%m-%d")
-        visit_obj = datetime.strptime(visit_date_str, "%Y-%m-%d")
-        
-        days_diff = (visit_obj - dob_obj).days
-        if days_diff < 0: return None, None, None
-        if days_diff > 1856: days_diff = 1856
-        
-        z_w, z_h, z_i = None, None, None
-        
-        if sexe in self.who_data["Poids"] and days_diff in self.who_data["Poids"][sexe]:
-            lms = self.who_data["Poids"][sexe][days_diff]
-            z_w = self.calculate_lms_zscore(weight, lms["L"], lms["M"], lms["S"])
-            
-        if sexe in self.who_data["Taille"] and days_diff in self.who_data["Taille"][sexe]:
-            lms = self.who_data["Taille"][sexe][days_diff]
-            z_h = self.calculate_lms_zscore(height, lms["L"], lms["M"], lms["S"])
-            
-        if sexe in self.who_data["IMC"] and days_diff in self.who_data["IMC"][sexe]:
-            lms = self.who_data["IMC"][sexe][days_diff]
-            z_i = self.calculate_lms_zscore(imc, lms["L"], lms["M"], lms["S"])
-            
-        return z_w, z_h, z_i
-
-    # --- MÉTHODES DU PLANNING ET VACCINS ---
-    def get_next_available_date(self, base_date_obj, vax_name, center_schedule):
-        allowed_days = center_schedule.get(vax_name, center_schedule.get("default", [0, 1, 2, 3, 4]))
-        current_date = base_date_obj
-        while current_date.weekday() not in allowed_days:
-            current_date += timedelta(days=1)
-        return current_date
-
-    def recalculate_schedule(self, p_id, center_schedule):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT dob FROM patients WHERE id_label = ?", (p_id,))
-        dob_str = cursor.fetchone()[0]
-        dob_obj = datetime.strptime(dob_str, "%Y-%m-%d")
-        
-        cursor.execute("SELECT vax_name, status, date_given, due_date FROM records WHERE patient_id = ?", (p_id,))
-        records = {row[0]: {"status": row[1], "date_given": row[2], "due_date": row[3]} for row in cursor.fetchall()}
-        
-        updates = []
-        projected_dates = {}
-        
-        for milestone, days_from_birth, vaccines in self.milestones:
-            target_date = dob_obj + timedelta(days=days_from_birth)
-            max_pushed_date = target_date
-            
-            for vax in vaccines:
-                if vax in self.dependencies:
-                    dep_vax, min_days = self.dependencies[vax]
-                    if dep_vax in projected_dates:
-                        dep_date = projected_dates[dep_vax]
-                        medical_min_date = dep_date + timedelta(days=min_days)
-                        if medical_min_date > max_pushed_date:
-                            max_pushed_date = medical_min_date
-                            
-            for vax in vaccines:
-                if records[vax]["status"] in ["Done", "Externe"] and records[vax]["date_given"]:
-                    projected_dates[vax] = datetime.strptime(records[vax]["date_given"], "%Y-%m-%d")
-                    continue
-                
-                final_date = self.get_next_available_date(max_pushed_date, vax, center_schedule)
-                projected_dates[vax] = final_date
-                
-                if final_date.strftime("%Y-%m-%d") != records[vax]["due_date"]:
-                    updates.append((final_date.strftime("%Y-%m-%d"), p_id, vax))
-        
-        for new_due, pid, vax_name in updates:
-            cursor.execute("UPDATE records SET due_date = ? WHERE patient_id = ? AND vax_name = ?", 
-                           (new_due, pid, vax_name))
-            
-        conn.commit()
-        conn.close()
-
     def generate_id(self):
         year = datetime.now().strftime("%y")
         conn = sqlite3.connect(self.db_path)
@@ -223,24 +54,41 @@ class VaxEngine:
         conn.close()
         return f"{max(ids) + 1 if ids else 1}/{year}"
 
-    def register_child(self, name, dob_obj, sexe, address, parent_name="", phone="", allergies="", email="", center_schedule={}):
-        new_id = self.generate_id()
-        dob_str = dob_obj.strftime("%Y-%m-%d")
+    def register_child(self, new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, initial_records):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO patients (id_label, name, dob, sexe, address, parent_name, phone, allergies, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                        (new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email))
         
-        for milestone, days, vaccines in self.milestones:
-            due = (dob_obj + timedelta(days=days)).strftime("%Y-%m-%d")
-            for vax in vaccines:
-                cursor.execute("INSERT INTO records (patient_id, milestone, vax_name, due_date, status, date_given, observations) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                               (new_id, milestone, vax, due, "Pending", None, ""))
+        for milestone, vax, due in initial_records:
+            cursor.execute("INSERT INTO records (patient_id, milestone, vax_name, due_date, status, date_given, observations) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                           (new_id, milestone, vax, due, "Pending", None, ""))
         conn.commit()
         conn.close()
+
+    def update_records_due_dates(self, p_id, updates):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        for new_due, vax_name in updates:
+            cursor.execute("UPDATE records SET due_date = ? WHERE patient_id = ? AND vax_name = ?", 
+                           (new_due, p_id, vax_name))
+        conn.commit()
+        conn.close()
+
+    def get_patient_dob_and_records(self, p_id):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT dob FROM patients WHERE id_label = ?", (p_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return None, None
+        dob_str = row[0]
         
-        self.recalculate_schedule(new_id, center_schedule)
-        return new_id
+        cursor.execute("SELECT vax_name, status, date_given, due_date FROM records WHERE patient_id = ?", (p_id,))
+        records = {r[0]: {"status": r[1], "date_given": r[2], "due_date": r[3]} for r in cursor.fetchall()}
+        conn.close()
+        return dob_str, records
 
     def search_patients(self, query):
         conn = sqlite3.connect(self.db_path)
@@ -383,16 +231,13 @@ class VaxEngine:
         conn.close()
         return res
 
-    def update_patient(self, p_id, name, dob_obj, sexe, address, parent_name, phone, allergies, email, center_schedule={}):
-        dob_str = dob_obj.strftime("%Y-%m-%d")
+    def update_patient(self, p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("UPDATE patients SET name = ?, dob = ?, sexe = ?, address = ?, parent_name = ?, phone = ?, allergies = ?, email = ? WHERE id_label = ?", 
                        (name, dob_str, sexe, address, parent_name, phone, allergies, email, p_id))
         conn.commit()
         conn.close()
-        
-        self.recalculate_schedule(p_id, center_schedule)
 
     def add_visit(self, p_id, date_str, weight, height, imc):
         conn = sqlite3.connect(self.db_path)
