@@ -260,7 +260,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent, current_settings):
         super().__init__(parent)
         self.setWindowTitle("⚙️ Paramètres & Planning")
-        self.setMinimumSize(550, 350)
+        self.setMinimumSize(600, 400)
         
         self.current_schedule = current_settings.get("center_schedule", {"default": [0, 1, 2, 3, 4]}).copy()
         
@@ -317,9 +317,36 @@ class SettingsDialog(QDialog):
             
         layout_plan.addLayout(days_layout)
         layout_plan.addStretch()
+
+        # --- ONGLET 3 : PROTOCOLES (ADMIN) ---
+        self.tab_admin = QWidget()
+        layout_admin = QVBoxLayout(self.tab_admin)
+        
+        warn_lbl = QLabel("<b>⚠️ Zone Sensible : Configuration du Calendrier Vaccinal</b><br>"
+                          "<i>Note : Cette section sera bientôt restreinte par mot de passe (Admin/Infirmier Chef).</i>")
+        warn_lbl.setStyleSheet("color: #e74c3c; font-size: 13px;")
+        layout_admin.addWidget(warn_lbl)
+        layout_admin.addSpacing(10)
+        
+        desc_lbl = QLabel("Le calendrier vaccinal est géré par le fichier <b>protocols.json</b>. "
+                          "Si le Ministère de la Santé met à jour le PNI (ex: ajout d'une dose), vous pouvez modifier ce fichier.")
+        desc_lbl.setWordWrap(True)
+        layout_admin.addWidget(desc_lbl)
+        
+        btn_open = QPushButton("📝 Ouvrir le fichier protocols.json")
+        btn_open.setStyleSheet("background-color: #34495e; color: white; padding: 8px; font-weight: bold;")
+        btn_open.clicked.connect(self.open_json_file)
+        layout_admin.addWidget(btn_open)
+        
+        btn_reload = QPushButton("🔄 Recharger les protocoles en mémoire")
+        btn_reload.setStyleSheet("background-color: #2980b9; color: white; padding: 8px; font-weight: bold;")
+        btn_reload.clicked.connect(self.reload_protocols)
+        layout_admin.addWidget(btn_reload)
+        layout_admin.addStretch()
         
         self.tabs.addTab(self.tab_gen, "🛠️ Général")
         self.tabs.addTab(self.tab_plan, "📆 Planning du Centre")
+        self.tabs.addTab(self.tab_admin, "🔐 Protocoles (Admin)")
         layout.addWidget(self.tabs)
         
         btn_layout = QHBoxLayout()
@@ -334,7 +361,8 @@ class SettingsDialog(QDialog):
         layout.addLayout(btn_layout)
         
         self.load_days_for_vax()
-        
+
+    # --- ORIGINAL HELPER METHODS ---
     def load_days_for_vax(self):
         vax_key = self.vax_combo.currentData()
         active_days = self.current_schedule.get(vax_key, self.current_schedule.get("default", [0, 1, 2, 3, 4]))
@@ -361,6 +389,33 @@ class SettingsDialog(QDialog):
             "secteurs": sects,
             "center_schedule": self.current_schedule
         }
+
+    # --- NEW ADMIN METHODS ---
+    def open_json_file(self):
+        import os
+        import platform
+        filepath = 'protocols.json'
+        if not os.path.exists(filepath):
+            QMessageBox.warning(self, "Erreur", "Le fichier protocols.json n'existe pas encore.")
+            return
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(filepath)
+            elif platform.system() == 'Darwin':
+                import subprocess
+                subprocess.call(('open', filepath))
+            else:
+                import subprocess
+                subprocess.call(('xdg-open', filepath))
+        except Exception as e:
+            QMessageBox.warning(self, "Erreur", f"Impossible d'ouvrir le fichier : {e}")
+
+    def reload_protocols(self):
+        try:
+            self.parent().engine.load_protocols()
+            QMessageBox.information(self, "Succès", "Protocoles rechargés avec succès !\nTous les nouveaux dossiers utiliseront ce calendrier.")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur Critique", f"Erreur lors du rechargement. Vérifiez la syntaxe de votre fichier JSON.\n\nDétail: {e}")
 
 class AllPatientsDialog(QDialog):
     def __init__(self, parent, patients_data, secteurs, engine=None, title="Tous les Dossiers Enregistrés"):
