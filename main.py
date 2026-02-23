@@ -193,7 +193,12 @@ class GrowthDialog(QDialog):
             except ValueError:
                 QMessageBox.warning(self, "Erreur", "Format de date invalide.")
                 return
-                
+        
+        # --- NEW: Phase 1 Input Validation ---
+        if parsed_date > datetime.now().date():
+            QMessageBox.warning(self, "Erreur", "La date de la visite ne peut pas être dans le futur.")
+            return
+        # -------------------------------------
         try:
             w = float(self.weight_in.text().replace(',', '.'))
             h = float(self.height_in.text().replace(',', '.'))
@@ -939,6 +944,13 @@ class VaxApp(QWidget):
                 self.date_in.setFocus()
                 return
 
+        # --- NEW: Phase 1 Input Validation (No Future DOB) ---
+        if parsed_dob > datetime.now().date():
+            QMessageBox.warning(self, "Erreur", "La date de naissance ne peut pas être dans le futur.")
+            self.date_in.setFocus()
+            return
+        # -----------------------------------------------------
+
         parent = self.parent_in.text().strip()
         phone = self.phone_in.text().strip()
         allergies = self.allergies_in.text().strip()
@@ -1348,7 +1360,14 @@ class VaxApp(QWidget):
                 widget.setFocus()
                 widget.selectAll()
                 return 
-
+            
+            # --- NEW: Phase 1 Input Validation (No Future Dates) ---
+            if parsed_date > datetime.now().date():
+                QMessageBox.warning(self, "Erreur de Saisie", "Action refusée : Impossible de valider un vaccin dans le futur.")
+                widget.setFocus()
+                widget.selectAll()
+                return
+            # -------------------------------------------------------
             selected_date = parsed_date.strftime("%Y-%m-%d")
             if current_status != status_to_save or given_str != selected_date:
                 needs_update = True
@@ -1413,86 +1432,103 @@ class VaxApp(QWidget):
         
         dob_fmt = datetime.strptime(dob_str, "%Y-%m-%d").strftime("%d/%m/%Y")
         
+        # --- HTML REPORT GENERATION (Phase 1 PNI Format) ---
         html_report = f"""
         <html>
         <head>
         <style>
-            body {{ font-family: Arial, sans-serif; font-size: 12pt; color: #000; }}
-            h1 {{ font-size: 20pt; color: #2980b9; text-align: center; margin-bottom: 5px; }}
-            .subtitle {{ text-align: right; color: #555; font-size: 10pt; margin-top: 0; }}
-            h2 {{ font-size: 16pt; color: #2c3e50; border-bottom: 1px solid #bdc3c7; padding-bottom: 3px; margin-top: 20px; }}
-            h3 {{ font-size: 14pt; color: #34495e; margin-bottom: 5px; margin-top: 15px; }}
-            table {{ width: 100%; font-size: 12pt; border-collapse: collapse; margin-top: 10px; }}
-            td {{ padding: 6px; border: 1px solid #bdc3c7; }}
-            ul {{ font-size: 12pt; line-height: 1.5; margin-top: 5px; }}
-            li {{ margin-bottom: 4px; }}
-            .alert {{ color: #c0392b; font-weight: bold; font-size: 12pt; margin-top: 10px; }}
-            .done {{ color: #27ae60; }}
-            .pending {{ color: #7f8c8d; }}
-            .rupture {{ color: #c0392b; }}
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; color: #333; }}
+            .header {{ text-align: center; border-bottom: 2px solid #27ae60; padding-bottom: 10px; margin-bottom: 20px; }}
+            .msh-logo {{ font-size: 14pt; font-weight: bold; color: #2c3e50; }}
+            .pni-title {{ font-size: 18pt; color: #27ae60; margin: 5px 0; font-weight: bold; text-transform: uppercase; }}
+            .subtitle {{ color: #7f8c8d; font-size: 10pt; }}
+            h2 {{ font-size: 14pt; color: #2c3e50; background-color: #ecf0f1; padding: 5px; border-left: 4px solid #2980b9; margin-top: 20px; }}
+            table {{ width: 100%; font-size: 11pt; border-collapse: collapse; margin-top: 10px; }}
+            th {{ background-color: #ecf0f1; text-align: left; padding: 8px; border: 1px solid #bdc3c7; }}
+            td {{ padding: 8px; border: 1px solid #bdc3c7; }}
+            .vax-table th {{ background-color: #2980b9; color: white; }}
+            .alert {{ color: #c0392b; font-weight: bold; font-size: 11pt; margin-top: 10px; padding: 5px; border: 1px dashed #c0392b; display: inline-block; }}
+            .done {{ color: #27ae60; font-weight: bold; }}
+            .pending {{ color: #7f8c8d; font-style: italic; }}
+            .rupture {{ color: #c0392b; font-weight: bold; }}
         </style>
         </head>
         <body>
-            <h1>RAPPORT DE VACCINATION</h1>
-            <p class='subtitle'><b>Généré le :</b> {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+            <div class="header">
+                <div class="msh-logo">Royaume du Maroc - Ministère de la Santé et de la Protection Sociale</div>
+                <div class="pni-title">Programme National d'Immunisation (PNI)</div>
+                <div class="subtitle">Extrait Officiel du Registre Numérique | Édité le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}</div>
+            </div>
             
-            <h2>INFORMATIONS PATIENT</h2>
+            <h2>INFORMATIONS DE L'ENFANT</h2>
             <table>
                 <tr>
-                    <td><b>Dossier N° :</b> {p_data[0]}</td>
-                    <td><b>Secteur :</b> {p_data[4]}</td>
+                    <th>Dossier N°</th><td>{p_data[0]}</td>
+                    <th>Secteur / CSCA</th><td>{p_data[4]}</td>
                 </tr>
                 <tr>
-                    <td><b>Nom :</b> {p_data[1]}</td>
-                    <td><b>Date Naissance :</b> {dob_fmt}</td>
+                    <th>Nom Complet</th><td><b>{p_data[1]}</b></td>
+                    <th>Date de Naissance</th><td>{dob_fmt}</td>
                 </tr>
                 <tr>
-                    <td><b>Sexe :</b> {p_data[3]}</td>
-                    <td><b>Téléphone :</b> {p_data[6] if len(p_data)>6 else ''}</td>
+                    <th>Sexe</th><td>{p_data[3]}</td>
+                    <th>Téléphone (Parent)</th><td>{p_data[6] if len(p_data)>6 else 'Non renseigné'}</td>
                 </tr>
             </table>
         """
         
         if len(p_data) > 7 and p_data[7]:
-            html_report += f"<p class='alert'>⚠️ ALLERGIES / NOTES : {p_data[7]}</p>"
+            html_report += f"<div class='alert'>⚠️ ALLERGIES / NOTES MÉDICALES : {p_data[7]}</div>"
             
-        html_report += "<h2>HISTORIQUE & PRÉVISIONS</h2>"
-        
-        raw_text = f"RAPPORT DE VACCINATION\nGénéré le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}\n{'='*45}\n"
-        raw_text += f"INFORMATIONS PATIENT\n{'-'*45}\nDossier N° : {p_data[0]}\nNom : {p_data[1]}\nDate Naissance : {dob_fmt}\nSexe : {p_data[3]}\nSecteur : {p_data[4]}\n"
-        if len(p_data) > 7 and p_data[7]: raw_text += f"ALLERGIES : {p_data[7]}\n"
-        raw_text += f"\n{'='*45}\nHISTORIQUE & PRÉVISIONS\n"
-        
-        current_milestone = ""
+        html_report += """
+            <h2>CALENDRIER VACCINAL</h2>
+            <table class="vax-table">
+                <tr>
+                    <th>Âge / Palier</th>
+                    <th>Vaccin</th>
+                    <th>Date Prévue</th>
+                    <th>Statut / Date d'Administration</th>
+                </tr>
+        """
+
+        # --- RAW TEXT GENERATION (For TXT Export) ---
+        raw_text = f"RAPPORT DE VACCINATION (PNI MAROC)\nGénéré le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}\n{'='*50}\n"
+        raw_text += f"INFORMATIONS PATIENT\n{'-'*50}\nDossier N° : {p_data[0]}\nNom : {p_data[1]}\nDate Naissance : {dob_fmt}\nSexe : {p_data[3]}\nSecteur : {p_data[4]}\n"
+        if len(p_data) > 7 and p_data[7]: raw_text += f"ALLERGIES / NOTES : {p_data[7]}\n"
+        raw_text += f"\n{'='*50}\nCALENDRIER VACCINAL\n"
+
+        # --- LOOP THROUGH RECORDS TO BUILD BOTH HTML AND TXT ---
         for milestone, vax_name, due, status, given, obs in records:
-            if milestone != current_milestone:
-                due_fmt = datetime.strptime(due, "%Y-%m-%d").strftime("%d/%m/%Y")
-                if current_milestone != "": html_report += "</ul>"
+            due_fmt = datetime.strptime(due, "%Y-%m-%d").strftime("%d/%m/%Y")
+            
+            # HTML Row Start
+            html_report += f"<tr><td><b>{milestone.upper()}</b></td><td>{vax_name}</td><td>{due_fmt}</td>"
+            
+            # Raw Text Row Start
+            raw_text_line = f"[{milestone.upper()}] {vax_name:<15} | Prévu: {due_fmt} | "
+
+            if status in ["Done", "Externe"]:
+                given_fmt = datetime.strptime(given, "%Y-%m-%d").strftime("%d/%m/%Y")
+                tag_html = " (Maternité)" if (status == "Externe" and given == dob_str) else (" (Externe)" if status == "Externe" else "")
+                tag_raw = " (Mat.)" if (status == "Externe" and given == dob_str) else (" (Ext.)" if status == "Externe" else "")
                 
-                html_report += f"<h3>[ {milestone.upper()} ] (Prévu: {due_fmt})</h3><ul>"
-                raw_text += f"\n[ {milestone.upper()} ] (Prévu: {due_fmt})\n"
-                current_milestone = milestone
+                html_report += f"<td class='done'>✅ Fait le {given_fmt}{tag_html}</td></tr>"
+                raw_text += raw_text_line + f"✅ Fait le {given_fmt}{tag_raw}\n"
                 
-            if status in ["Done", "Externe", "Rupture", "Maladie"]:
-                if status == "Rupture":
-                    html_report += f"<li><span class='rupture'>❌ <b>{vax_name}</b> : {obs}</span></li>"
-                    raw_text += f"  ❌ {vax_name:<15} : {obs}\n"
-                elif status == "Maladie":
-                    html_report += f"<li><span style='color: #d35400;'>🤒 <b>{vax_name}</b> : {obs}</span></li>"
-                    raw_text += f"  🤒 {vax_name:<15} : {obs}\n"
-                else:
-                    given_fmt = datetime.strptime(given, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    tag = " (Naiss.)" if (status == "Externe" and given == dob_str) else (" (Ext.)" if status == "Externe" else "")
-                    note = f" <i>[{obs}]</i>" if obs else ""
-                    
-                    html_report += f"<li><span class='done'>✅ <b>{vax_name}</b> : {given_fmt}{tag}{note}</span></li>"
-                    raw_text += f"  ✅ {vax_name:<15} : {given_fmt}{tag} {obs}\n".strip() + "\n"
+            elif status == "Rupture":
+                html_report += f"<td class='rupture'>❌ Rupture de stock ({obs})</td></tr>"
+                raw_text += raw_text_line + f"❌ Rupture de stock ({obs})\n"
+                
+            elif status == "Maladie":
+                html_report += f"<td style='color: #d35400;'>🤒 Reporté maladie ({obs})</td></tr>"
+                raw_text += raw_text_line + f"🤒 Reporté maladie ({obs})\n"
+                
             else:
-                html_report += f"<li><span class='pending'>⏳ <b>{vax_name}</b> : En attente</span></li>"
-                raw_text += f"  ⏳ {vax_name:<15} : En attente\n"
-        
-        html_report += "</ul></body></html>"
-        
+                html_report += f"<td class='pending'>⏳ En attente</td></tr>"
+                raw_text += raw_text_line + f"⏳ En attente\n"
+                
+        html_report += "</table></body></html>"
+
         dialog = ReportDialog(self, html_report, raw_text, p_data[1])
         dialog.exec()
 
