@@ -17,5 +17,7 @@
         "RR1": [
             2
         ]
-    }
+    },
+    "pneumo_mode": "New",
+    "allow_future_dates": true
 }

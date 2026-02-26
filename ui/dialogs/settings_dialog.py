@@ -34,6 +34,25 @@ class SettingsDialog(QDialog):
         self.sectors_input = QLineEdit()
         self.sectors_input.setText(", ".join(current_settings.get("secteurs", [])))
         layout_gen.addWidget(self.sectors_input)
+        layout_gen.addSpacing(10)
+        
+        layout_gen.addWidget(QLabel("<b>Protocole Pneumo (PCV) Actif :</b>"))
+        self.pneumo_combo = QComboBox()
+        self.pneumo_combo.addItems(["Old (3 Doses: 2, 4, 11 mois)", "New (4 Doses: 2, 4, 11, 13 mois avec décalage de 14j)"])
+        
+        saved_mode = current_settings.get("pneumo_mode", "Old")
+        if saved_mode == "New":
+            self.pneumo_combo.setCurrentIndex(1)
+        else:
+            self.pneumo_combo.setCurrentIndex(0)
+            
+        layout_gen.addWidget(self.pneumo_combo)
+        layout_gen.addSpacing(10)
+        
+        self.future_dates_cb = QCheckBox("Autoriser la validation des dates dans le futur (Mode Test)")
+        self.future_dates_cb.setChecked(current_settings.get("allow_future_dates", False))
+        layout_gen.addWidget(self.future_dates_cb)
+        
         layout_gen.addStretch()
         
         # --- ONGLET 2 : PLANNING DU CENTRE ---
@@ -132,7 +151,9 @@ class SettingsDialog(QDialog):
             "dark_mode": self.theme_combo.currentText() == "Mode Sombre",
             "fold_by_default": self.fold_combo.currentText() == "Groupes pliés (Vue condensée)",
             "secteurs": sects,
-            "center_schedule": self.current_schedule
+            "center_schedule": self.current_schedule,
+            "pneumo_mode": "New" if self.pneumo_combo.currentIndex() == 1 else "Old",
+            "allow_future_dates": self.future_dates_cb.isChecked()
         }
 
     # --- NEW ADMIN METHODS ---

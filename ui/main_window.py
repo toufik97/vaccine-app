@@ -37,7 +37,9 @@ class VaxApp(QWidget):
             "dark_mode": True,
             "fold_by_default": True,
             "secteurs": ["Secteur A", "Secteur B", "Secteur C", "Hors Secteur"],
-            "center_schedule": {"default": [0, 1, 2, 3, 4]} 
+            "center_schedule": {"default": [0, 1, 2, 3, 4]},
+            "pneumo_mode": "Old",
+            "allow_future_dates": False
         }
         if os.path.exists(self.settings_file):
             try:
@@ -45,6 +47,10 @@ class VaxApp(QWidget):
                     self.settings = json.load(f)
                     if "center_schedule" not in self.settings:
                         self.settings["center_schedule"] = default_settings["center_schedule"]
+                    if "pneumo_mode" not in self.settings:
+                        self.settings["pneumo_mode"] = default_settings["pneumo_mode"]
+                    if "allow_future_dates" not in self.settings:
+                        self.settings["allow_future_dates"] = default_settings["allow_future_dates"]
             except Exception:
                 self.settings = default_settings.copy()
         else:
@@ -183,8 +189,14 @@ class VaxApp(QWidget):
     def open_settings(self):
         dialog = SettingsDialog(self, self.settings)
         if dialog.exec():
+            # Check if pneumo mode changed to force a schedule recalculation
+            old_pneumo = self.settings.get("pneumo_mode", "Old")
             self.settings = dialog.get_new_settings()
             self.save_settings()
+            
+            # Sync to engine config memory manually since engine doesn't AutoLoad outside of __init__ unless instructed
+            self.engine.config["pneumo_mode"] = self.settings.get("pneumo_mode", "Old")
+                
             current_addr = self.address_in.currentText()
             self.address_in.clear()
             self.address_in.addItems(self.settings["secteurs"])
@@ -196,6 +208,10 @@ class VaxApp(QWidget):
                     self.collapsed_groups = set(m[0] for m in self.engine.milestones)
                 else:
                     self.collapsed_groups.clear()
+                    
+                if old_pneumo != self.settings.get("pneumo_mode", "Old"):
+                    self.engine.recalculate_schedule(self.current_patient_id, self.settings["center_schedule"])
+                    
                 self.load_table_data(self.current_patient_id)
 
     def apply_theme(self):
@@ -325,6 +341,7 @@ class VaxApp(QWidget):
         self.growth_btn.setEnabled(True)
         self.report_btn.setEnabled(True)
         
+        self.engine.recalculate_schedule(p[0], self.settings["center_schedule"])
         self.load_table_data(p[0])
 
     def show_dashboard(self):
@@ -411,7 +428,11 @@ class VaxApp(QWidget):
         bold_font.setBold(True)
 
         row_idx = 0
-        for milestone, vax_list in grouped.items():
+        milestone_order = {m[0]: idx for idx, m in enumerate(self.engine.milestones)}
+        sorted_milestones = sorted(grouped.keys(), key=lambda x: milestone_order.get(x, 999))
+        
+        for milestone in sorted_milestones:
+            vax_list = grouped[milestone]
             all_completed = all(v[3] in ["Done", "Externe"] for v in vax_list)
             
             dates_list = [v[4] for v in vax_list if v[3] in ["Done", "Externe"] and v[4]]
@@ -489,9 +510,15 @@ class VaxApp(QWidget):
             row_idx += 1
 
             for v_data in vax_list:
-                _, vax_name, _, status, given_str, obs = v_data
+                _, vax_name, due_date_str, status, given_str, obs = v_data
                 
-                lbl_text = f"      ↳ {vax_name}"
+                display_name = vax_name
+                if vax_name == "Pneumo3_NewOnly":
+                    display_name = "Pneumo3 (6 Mois)"
+                elif vax_name == "Pneumo_Final":
+                    display_name = "Pneumo3 (12 Mois)" if self.settings.get("pneumo_mode", "Old") == "Old" else "Pneumo4 (12 Mois)"
+                    
+                lbl_text = f"      ↳ {display_name}"
                 if obs: lbl_text += " ℹ️"
                     
                 lbl_vax = QTableWidgetItem(lbl_text)
@@ -499,12 +526,26 @@ class VaxApp(QWidget):
                 lbl_vax.setForeground(text_color)
                 lbl_vax.setFlags(lbl_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 
-                due_vax = QTableWidgetItem("") 
-                due_vax.setFlags(due_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                
+                due_vax_text = ""
+                if due_date_str:
+                    due_vax_text = datetime.strptime(due_date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+                    
                 vax_widget = DateLineEdit(row_idx)
                 vax_widget.setPlaceholderText("Date, T, N, E, R, M")
                 vax_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                
+                if vax_name == "Pneumo3_NewOnly" and self.settings.get("pneumo_mode", "Old") == "Old":
+                    due_vax_text = "-"
+                    vax_widget.setReadOnly(True)
+                    vax_widget.setEnabled(False)
+                    vax_widget.setPlaceholderText("Non requis")
+                    status = "Pending"
+                    is_late = False
+                    is_today = False
+                    
+                due_vax = QTableWidgetItem(due_vax_text) 
+                due_vax.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                due_vax.setFlags(due_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 
                 vax_widget.navigationRequested.connect(
                     lambda r, d, is_g=False, m=milestone, v=vax_name, st=status, gs=given_str, dob=dob_str: 
@@ -647,12 +688,33 @@ class VaxApp(QWidget):
                 return 
             
             # --- NEW: Phase 1 Input Validation (No Future Dates) ---
-            if parsed_date > datetime.now().date():
-                QMessageBox.warning(self, "Erreur de Saisie", "Action refusée : Impossible de valider un vaccin dans le futur.")
+            if not self.settings.get("allow_future_dates", False) and parsed_date > datetime.now().date():
+                QMessageBox.warning(self, "Erreur de Saisie", "Action refusée : Impossible de valider un vaccin dans le futur.\n(Vous pouvez désactiver cette sécurité dans les paramètres).")
                 widget.setFocus()
                 widget.selectAll()
                 return
             # -------------------------------------------------------
+            
+            # --- NEW: Phase 2 Medical Validation (Dependencies / Min Age) ---
+            if status_to_save in ["Done", "Externe"]:
+                error_msg = None
+                if is_group:
+                    core_vaxes = self.engine.scheduler.get_core_vaccines(milestone, self.settings.get("pneumo_mode", "Old"))
+                    for v in core_vaxes:
+                        err = self.engine.validate_vaccine_date(self.current_patient_id, v, parsed_date)
+                        if err: 
+                            error_msg = f"Impossible de valider le groupe.\n{v}: {err}"
+                            break
+                else:
+                    error_msg = self.engine.validate_vaccine_date(self.current_patient_id, vax_name, parsed_date)
+                    
+                if error_msg:
+                    QMessageBox.warning(self, "Erreur Médicale", f"Action refusée : {error_msg}")
+                    widget.setFocus()
+                    widget.selectAll()
+                    return
+            # ----------------------------------------------------------------
+            
             selected_date = parsed_date.strftime("%Y-%m-%d")
             if current_status != status_to_save or given_str != selected_date:
                 needs_update = True

@@ -12,6 +12,23 @@ class VaxEngine:
         self.db = Database('vax_pro.db')
         self.zscore_calc = WhoZScoreCalculator()
         self.scheduler = Scheduler()
+        self.load_config()
+
+    def load_config(self):
+        self.config_file = 'config.json'
+        # Ensure we always parse the latest file locally
+        import os, json
+        if os.path.exists(self.config_file):
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+        else:
+            self.config = {"pneumo_mode": "Old"}
+            self.save_config()
+
+    def save_config(self):
+        import json
+        with open(self.config_file, 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, indent=4)
         
     def load_protocols(self):
         """ Reloads the protocols from json and sets them. """
@@ -40,8 +57,13 @@ class VaxEngine:
         if not dob_str:
             return
             
-        updates = self.scheduler.calculate_updates(dob_str, records_dict, center_schedule)
+        pneumo_mode = self.config.get("pneumo_mode", "Old")
+        updates = self.scheduler.calculate_updates(dob_str, records_dict, center_schedule, pneumo_mode)
         self.db.update_records_due_dates(p_id, updates)
+
+    def recalculate_all_schedules(self, center_schedule):
+        for p in self.db.get_all_patients():
+            self.recalculate_schedule(p[0], center_schedule)
 
     def register_child(self, name, dob_obj, sexe, address, parent_name="", phone="", allergies="", email="", center_schedule={}):
         new_id = self.db.generate_id()
@@ -70,25 +92,39 @@ class VaxEngine:
         self.db.update_vax_status(p_id, milestone, vax_name, status, date_given)
 
     def update_milestone_status(self, p_id, milestone, status, date_given):
-        self.db.update_milestone_status(p_id, milestone, status, date_given)
+        pneumo_mode = self.config.get("pneumo_mode", "Old")
+        for v in self.scheduler.get_core_vaccines(milestone, pneumo_mode):
+            self.db.update_vax_status(p_id, milestone, v, status, date_given)
 
     def mark_rupture(self, p_id, milestone, vax_name, date_str):
         self.db.mark_rupture(p_id, milestone, vax_name, date_str)
 
     def mark_milestone_rupture(self, p_id, milestone, date_str):
-        self.db.mark_milestone_rupture(p_id, milestone, date_str)
+        pneumo_mode = self.config.get("pneumo_mode", "Old")
+        for v in self.scheduler.get_core_vaccines(milestone, pneumo_mode):
+            self.db.mark_rupture(p_id, milestone, v, date_str)
 
     def mark_maladie(self, p_id, milestone, vax_name, date_str):
         self.db.mark_maladie(p_id, milestone, vax_name, date_str)
 
     def mark_milestone_maladie(self, p_id, milestone, date_str):
-        self.db.mark_milestone_maladie(p_id, milestone, date_str)
+        pneumo_mode = self.config.get("pneumo_mode", "Old")
+        for v in self.scheduler.get_core_vaccines(milestone, pneumo_mode):
+            self.db.mark_maladie(p_id, milestone, v, date_str)
 
     def cancel_vaccine(self, p_id, milestone, vax_name):
         self.db.cancel_vaccine(p_id, milestone, vax_name)
 
     def cancel_milestone(self, p_id, milestone):
-        self.db.cancel_milestone(p_id, milestone)
+        pneumo_mode = self.config.get("pneumo_mode", "Old")
+        for v in self.scheduler.get_core_vaccines(milestone, pneumo_mode):
+            self.db.cancel_vaccine(p_id, milestone, v)
+
+    def validate_vaccine_date(self, p_id, vax_name, input_date):
+        dob_str, records_dict = self.db.get_patient_dob_and_records(p_id)
+        if not dob_str: return None
+        pneumo_mode = self.config.get("pneumo_mode", "Old")
+        return self.scheduler.validate_vaccine_input(dob_str, records_dict, vax_name, pneumo_mode, input_date)
 
     def get_patient(self, p_id):
         return self.db.get_patient(p_id)
