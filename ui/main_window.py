@@ -9,7 +9,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from core.engine import VaxEngine
+from core.enums import VaccineStatus
 from ui.widgets.date_line_edit import DateLineEdit
+from ui.widgets.patient_table import PatientTableWidget
 from ui.dialogs.growth_dialog import GrowthDialog
 from ui.dialogs.help_dialog import HelpDialog
 from ui.dialogs.settings_dialog import SettingsDialog
@@ -70,23 +72,23 @@ class VaxApp(QWidget):
         
         top_btns_layout = QHBoxLayout()
         self.help_btn = QPushButton("❔ Guide")
-        self.help_btn.setStyleSheet("background-color: #3498db; color: white; padding: 8px; font-weight: bold;")
+        self.help_btn.setObjectName("helpBtn")
         self.help_btn.clicked.connect(self.show_help)
         top_btns_layout.addWidget(self.help_btn)
         
         self.settings_btn = QPushButton("⚙️ Paramètres") 
-        self.settings_btn.setStyleSheet("background-color: #7f8c8d; color: white; padding: 8px; font-weight: bold;")
+        self.settings_btn.setObjectName("settingsBtn")
         self.settings_btn.clicked.connect(self.open_settings)
         top_btns_layout.addWidget(self.settings_btn)
         left_panel.addLayout(top_btns_layout)
         
         self.stats_btn = QPushButton("📊 Tableau de Bord")
-        self.stats_btn.setStyleSheet("background-color: #8e44ad; color: white; padding: 10px; font-weight: bold;")
+        self.stats_btn.setObjectName("statsBtn")
         self.stats_btn.clicked.connect(self.show_dashboard)
         left_panel.addWidget(self.stats_btn)
         
         self.view_all_btn = QPushButton("📂 Tous les Dossiers")
-        self.view_all_btn.setStyleSheet("background-color: #2980b9; color: white; padding: 10px; font-weight: bold;")
+        self.view_all_btn.setObjectName("viewAllBtn")
         self.view_all_btn.clicked.connect(self.show_all_patients)
         left_panel.addWidget(self.view_all_btn)
         
@@ -138,7 +140,7 @@ class VaxApp(QWidget):
         left_panel.addWidget(self.allergies_in)
         
         save_btn = QPushButton("Enregistrer Nouveau")
-        save_btn.setStyleSheet("background-color: #27ae60; color: white; padding: 10px; font-weight: bold;")
+        save_btn.setObjectName("saveBtn")
         save_btn.clicked.connect(self.handle_save)
         left_panel.addWidget(save_btn)
         left_panel.addStretch()
@@ -156,14 +158,17 @@ class VaxApp(QWidget):
         
         action_layout = QHBoxLayout()
         self.edit_btn = QPushButton("✏️ Modifier le Dossier")
+        self.edit_btn.setObjectName("editBtn")
         self.edit_btn.setEnabled(False)
         self.edit_btn.clicked.connect(self.edit_patient)
         
         self.growth_btn = QPushButton("⚖️ Constantes & Croissance")
+        self.growth_btn.setObjectName("growthBtn")
         self.growth_btn.setEnabled(False)
         self.growth_btn.clicked.connect(self.open_growth_dialog)
         
         self.report_btn = QPushButton("📄 Rapport Patient")
+        self.report_btn.setObjectName("reportBtn")
         self.report_btn.setEnabled(False)
         self.report_btn.clicked.connect(self.generate_report)
         
@@ -172,10 +177,7 @@ class VaxApp(QWidget):
         action_layout.addWidget(self.report_btn)
         right_panel.addLayout(action_layout)
 
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Étape / Vaccin", "Date Prévue", "Date Administrée"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.cellClicked.connect(self.toggle_group)
+        self.table = PatientTableWidget(self)
         right_panel.addWidget(self.table)
 
         main_layout.addWidget(scroll)
@@ -215,17 +217,75 @@ class VaxApp(QWidget):
                 self.load_table_data(self.current_patient_id)
 
     def apply_theme(self):
+        base_style = """
+            QPushButton { 
+                border-radius: 6px; 
+                padding: 10px 16px; 
+                font-weight: 600; 
+                font-size: 13px;
+                border: none;
+                color: white;
+            }
+            QPushButton:hover { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(255,255,255,40), stop:1 rgba(255,255,255,0)); }
+            QPushButton:pressed { background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0,0,0,40), stop:1 rgba(0,0,0,0)); }
+            
+            #helpBtn { background-color: #3b82f6; }
+            #settingsBtn { background-color: #64748b; }
+            #statsBtn { background-color: #8b5cf6; }
+            #viewAllBtn { background-color: #0ea5e9; }
+            #saveBtn { background-color: #10b981; }
+            
+            #editBtn { background-color: #f59e0b; color: white; }
+            #growthBtn { background-color: #ec4899; color: white; }
+            #reportBtn { background-color: #6366f1; color: white; }
+            
+            QPushButton:disabled { background-color: #94a3b8; color: #e2e8f0; }
+            
+            QLineEdit, QComboBox, QDateEdit, QTextEdit { 
+                padding: 8px; 
+                border-radius: 4px; 
+                font-size: 13px;
+            }
+            QTableWidget { 
+                border: none;
+                border-radius: 8px;
+            }
+            QTableWidget::item:selected {
+                background-color: rgba(59, 130, 246, 0.3);
+            }
+            QHeaderView::section {
+                padding: 10px;
+                font-weight: bold;
+                border: none;
+                font-size: 13px;
+            }
+            QScrollBar:vertical { border: none; background: transparent; width: 10px; margin: 0; }
+            QScrollBar::handle:vertical { border-radius: 5px; min-height: 20px; }
+        """
+        
         if self.settings.get("dark_mode", True):
-            self.setStyleSheet("""
-                QWidget { background-color: #1e1e1e; color: #ffffff; }
-                QTableWidget { background-color: #2b2b2b; color: #ffffff; gridline-color: #444444; }
-                QHeaderView::section { background-color: #333333; color: white; padding: 4px; border: 1px solid #444; }
-                QLineEdit, QComboBox, QDateEdit, QTextEdit { background-color: #333333; color: white; border: 1px solid #555; }
-                QToolTip { background-color: #34495e; color: white; border: 1px solid #2980b9; padding: 5px; border-radius: 3px; }
+            self.setStyleSheet(base_style + """
+                QWidget { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Arial, sans-serif; }
+                QTableWidget { background-color: #1e1e1e; color: #e0e0e0; outline: none; gridline-color: #333333; }
+                QHeaderView::section { background-color: #252525; color: #ffffff; border-bottom: 2px solid #444; }
+                QLineEdit, QComboBox, QTextEdit { background-color: #252525; color: #ffffff; border: 1px solid #444; }
+                QLineEdit:focus, QComboBox:focus { border: 1px solid #3b82f6; }
+                QToolTip { background-color: #1e293b; color: white; border: 1px solid #334155; padding: 6px; border-radius: 4px; }
+                QScrollArea { border: none; background-color: transparent; }
+                QScrollBar::handle:vertical { background: #475569; }
+                QScrollBar::handle:vertical:hover { background: #64748b; }
             """)
         else:
-            self.setStyleSheet("""
-                QToolTip { background-color: #ecf0f1; color: black; border: 1px solid #bdc3c7; padding: 5px; border-radius: 3px; }
+            self.setStyleSheet(base_style + """
+                QWidget { background-color: #f8fafc; color: #334155; font-family: 'Segoe UI', Arial, sans-serif; }
+                QTableWidget { background-color: #ffffff; color: #1e293b; outline: none; gridline-color: #e2e8f0; }
+                QHeaderView::section { background-color: #f1f5f9; color: #334155; border-bottom: 2px solid #cbd5e1; }
+                QLineEdit, QComboBox, QTextEdit { background-color: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; }
+                QLineEdit:focus, QComboBox:focus { border: 1px solid #3b82f6; }
+                QToolTip { background-color: #ffffff; color: #334155; border: 1px solid #cbd5e1; padding: 6px; border-radius: 4px; }
+                QScrollArea { border: none; background-color: transparent; }
+                QScrollBar::handle:vertical { background: #cbd5e1; }
+                QScrollBar::handle:vertical:hover { background: #94a3b8; }
             """)
 
     def handle_save(self):
@@ -313,15 +373,19 @@ class VaxApp(QWidget):
         
         if self.current_patient_id != p[0]:
             self.current_patient_id = p[0]
-            if self.settings.get("fold_by_default", True):
-                self.collapsed_groups = set(m[0] for m in self.engine.milestones)
-            else:
+            self._force_auto_unfold = True
+            if not self.settings.get("fold_by_default", True):
                 self.collapsed_groups.clear()
         
         dob_formatted = datetime.strptime(p[2], "%Y-%m-%d").strftime("%d/%m/%Y")
         lbl_color = "#3498db" if self.settings.get("dark_mode", True) else "#2c3e50"
         
-        profile_text = f"Dossier N° {p[0]} : {p[1]} ({p[3]}) | {p[4]} | Né(e) le: {dob_formatted}"
+        # Add visual cue for Sexe
+        gender_icon = "👦" if p[3].lower() == "masculin" else "👧" if p[3].lower() == "féminin" else "👤"
+        gender_color = "#3498db" if p[3].lower() == "masculin" else "#e84393"
+        gender_badge = f"<span style='color: {gender_color}; font-size: 16px;'>{gender_icon} {p[3]}</span>"
+        
+        profile_text = f"Dossier N° {p[0]} : {p[1]} | {gender_badge} | {p[4]} | Né(e) le: {dob_formatted}"
         
         options_text = []
         if len(p) > 5 and p[5]: options_text.append(f"Parent: {p[5]}")
@@ -333,7 +397,7 @@ class VaxApp(QWidget):
             
         if len(p) > 7 and p[7]:
             profile_text += f"\n<span style='color: #e74c3c;'>⚠️ Allergies / Notes : {p[7]}</span>"
-
+        
         self.info_lbl.setStyleSheet(f"font-size: 16px; color: {lbl_color}; font-weight: bold;")
         self.info_lbl.setText(profile_text)
         
@@ -364,249 +428,39 @@ class VaxApp(QWidget):
             dialog.exec()
 
     def toggle_group(self, row, col):
-        if col == 0:
-            item = self.table.item(row, col)
-            if item:
-                data = item.data(Qt.ItemDataRole.UserRole)
-                if data and data[0] == "group":
-                    milestone = data[1]
-                    if milestone in self.collapsed_groups:
-                        self.collapsed_groups.remove(milestone)
-                    else:
-                        self.collapsed_groups.add(milestone)
-                    self.load_table_data(self.current_patient_id)
+        pass # Now handled internally by PatientTableWidget
 
     def load_table_data(self, p_id):
         p_data = self.engine.get_patient(p_id)
+        if not p_data:
+            return
+            
         dob_str = p_data[2]
         records = self.engine.get_records(p_id)
         
-        grouped = {}
-        for r in records:
-            m = r[0]
-            if m not in grouped: grouped[m] = []
-            grouped[m].append(r)
-            
-        total_rows = len(grouped) + len(records)
-        self.table.setRowCount(total_rows)
-        today = datetime.now().date()
-        
-        milestone_days = {m[0]: m[1] for m in self.engine.milestones}
-
-        if self.settings.get("dark_mode", True):
-            bg_group = QColor("#34495e")
-            bg_done = QColor("#1b5e20")
-            bg_late = QColor("#b71c1c")
-            bg_today = QColor("#e65100")
-            bg_rupture = QColor("#8e44ad") 
-            bg_maladie = QColor("#d35400") 
-            text_color = QColor("#ffffff")
-            text_rupture = QColor("#ffffff")
-            text_maladie = QColor("#ffffff")
-            input_style_done = "background-color: transparent; border: none; font-weight: bold; color: #ffffff;"
-            input_style_empty = "background-color: #333333; border: 1px solid #555; color: #ffffff;"
-            input_style_group = "background-color: #2c3e50; border: 1px solid #555; color: #ffffff; font-weight: bold;"
-            input_style_rupture = "background-color: transparent; border: none; font-weight: bold; color: #ffffff;"
-            input_style_maladie = "background-color: transparent; border: none; font-weight: bold; color: #ffffff;"
-        else:
-            bg_group = QColor("#e0e6ed")
-            bg_done = QColor("#d4edda")
-            bg_late = QColor("#f8d7da")
-            bg_today = QColor("#fff3cd")
-            bg_rupture = QColor("#d2b4de") 
-            bg_maladie = QColor("#fdebd0") 
-            text_color = QColor("#000000")
-            text_rupture = QColor("#4a235a")
-            text_maladie = QColor("#d35400")
-            input_style_done = "background-color: transparent; border: none; font-weight: bold; color: #000000;"
-            input_style_empty = "background-color: white; border: 1px solid #ccc; color: #000000;"
-            input_style_group = "background-color: white; border: 1px solid #999; color: #000000; font-weight: bold;"
-            input_style_rupture = "background-color: transparent; border: none; font-weight: bold; color: #4a235a;"
-            input_style_maladie = f"background-color: transparent; border: none; font-weight: bold; color: {text_maladie.name()};"
-
-        bold_font = QFont()
-        bold_font.setBold(True)
-
-        row_idx = 0
-        milestone_order = {m[0]: idx for idx, m in enumerate(self.engine.milestones)}
-        sorted_milestones = sorted(grouped.keys(), key=lambda x: milestone_order.get(x, 999))
-        
-        for milestone in sorted_milestones:
-            vax_list = grouped[milestone]
-            all_completed = all(v[3] in ["Done", "Externe"] for v in vax_list)
-            
-            dates_list = [v[4] for v in vax_list if v[3] in ["Done", "Externe"] and v[4]]
-            group_date_str = max(set(dates_list), key=dates_list.count) if (all_completed and dates_list) else None
-            
-            due_date_str = vax_list[0][2]
-            due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
-            
-            base_target = datetime.strptime(dob_str, "%Y-%m-%d").date() + timedelta(days=milestone_days[milestone])
-            icon_delay = " 🕒" if (due_date - base_target).days > 7 else ""
-            
-            is_late = False
-            is_today = False
-            if milestone.upper() == "NAISSANCE":
-                if today > due_date + timedelta(days=30): is_late = True
-            else:
-                if today > due_date: is_late = True
-            
-            if today == due_date: is_today = True
-            
-            group_status = "Done" if all_completed else "Pending"
-            is_collapsed = milestone in self.collapsed_groups
-            arrow = "▶" if is_collapsed else "▼"
-
-            lbl_group = QTableWidgetItem(f"{arrow} {milestone.upper()}")
-            lbl_group.setFont(bold_font)
-            lbl_group.setForeground(text_color)
-            lbl_group.setFlags(lbl_group.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            lbl_group.setData(Qt.ItemDataRole.UserRole, ("group", milestone))
-            
-            due_group = QTableWidgetItem(due_date.strftime("%d/%m/%Y") + icon_delay)
-            due_group.setFont(bold_font)
-            due_group.setForeground(text_color)
-            due_group.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            due_group.setFlags(due_group.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            
-            group_widget = DateLineEdit(row_idx)
-            group_widget.setPlaceholderText("Valider le groupe")
-            group_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            
-            group_widget.navigationRequested.connect(
-                lambda r, d, is_g=True, m=milestone, v=None, st=group_status, gs=group_date_str, dob=dob_str: 
-                self.handle_navigation(r, d, is_g, m, v, st, gs, dob)
-            )
-
-            if all_completed and group_date_str:
-                group_fmt = datetime.strptime(group_date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-                all_externe = all(v[3] == "Externe" for v in vax_list)
-                tag = " (Naiss.)" if (all_externe and group_date_str == dob_str) else (" (Ext.)" if all_externe else "")
-                if len(set(dates_list)) > 1: tag += " *"
-                    
-                group_widget.setText(f"{group_fmt}{tag}")
-                group_widget.setStyleSheet(input_style_done)
-                lbl_group.setBackground(bg_done)
-                due_group.setBackground(bg_done)
-                bg_container = QTableWidgetItem()
-                bg_container.setBackground(bg_done)
-                self.table.setItem(row_idx, 2, bg_container)
-            else:
-                group_widget.setStyleSheet(input_style_group)
-                if is_late:
-                    lbl_group.setBackground(bg_late)
-                    due_group.setBackground(bg_late)
-                elif is_today:
-                    lbl_group.setBackground(bg_today)
-                    due_group.setBackground(bg_today)
-                else:
-                    lbl_group.setBackground(bg_group)
-                    due_group.setBackground(bg_group)
-                self.table.setItem(row_idx, 2, QTableWidgetItem())
+        # Apply auto-unfold logic only when loading a new patient
+        if getattr(self, '_force_auto_unfold', False):
+            self._force_auto_unfold = False
+            self.table.collapsed_groups.clear()
+            if self.settings.get("fold_by_default", True):
+                grouped = {}
+                for r in records:
+                    m = r[0]
+                    if m not in grouped: grouped[m] = []
+                    grouped[m].append(r)
+                self.table.collapsed_groups = set(grouped.keys())
+                milestone_order = {m[0].strip().lower(): idx for idx, m in enumerate(self.engine.milestones)}
+                sorted_m = sorted(grouped.keys(), key=lambda x: milestone_order.get(x.strip().lower(), 999))
                 
-            self.table.setItem(row_idx, 0, lbl_group)
-            self.table.setItem(row_idx, 1, due_group)
-            self.table.setCellWidget(row_idx, 2, group_widget)
-            row_idx += 1
+                for m_name in sorted_m:
+                    v_list = grouped[m_name]
+                    if not all(v_data[3] in ["Done", "Externe"] for v_data in v_list):
+                        if m_name in self.table.collapsed_groups:
+                            self.table.collapsed_groups.remove(m_name)
+                        break
 
-            for v_data in vax_list:
-                _, vax_name, due_date_str, status, given_str, obs = v_data
-                
-                display_name = vax_name
-                if vax_name == "Pneumo3_NewOnly":
-                    display_name = "Pneumo3 (6 Mois)"
-                elif vax_name == "Pneumo_Final":
-                    display_name = "Pneumo3 (12 Mois)" if self.settings.get("pneumo_mode", "Old") == "Old" else "Pneumo4 (12 Mois)"
-                    
-                lbl_text = f"      ↳ {display_name}"
-                if obs: lbl_text += " ℹ️"
-                    
-                lbl_vax = QTableWidgetItem(lbl_text)
-                if obs: lbl_vax.setToolTip(obs)
-                lbl_vax.setForeground(text_color)
-                lbl_vax.setFlags(lbl_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                
-                due_vax_text = ""
-                if due_date_str:
-                    due_vax_text = datetime.strptime(due_date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    
-                vax_widget = DateLineEdit(row_idx)
-                vax_widget.setPlaceholderText("Date, T, N, E, R, M")
-                vax_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                
-                if vax_name == "Pneumo3_NewOnly" and self.settings.get("pneumo_mode", "Old") == "Old":
-                    due_vax_text = "-"
-                    vax_widget.setReadOnly(True)
-                    vax_widget.setEnabled(False)
-                    vax_widget.setPlaceholderText("Non requis")
-                    status = "Pending"
-                    is_late = False
-                    is_today = False
-                    
-                due_vax = QTableWidgetItem(due_vax_text) 
-                due_vax.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                due_vax.setFlags(due_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                
-                vax_widget.navigationRequested.connect(
-                    lambda r, d, is_g=False, m=milestone, v=vax_name, st=status, gs=given_str, dob=dob_str: 
-                    self.handle_navigation(r, d, is_g, m, v, st, gs, dob)
-                )
-
-                if status in ["Done", "Externe"] and given_str:
-                    given_fmt = datetime.strptime(given_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    tag = " (Naiss.)" if given_str == dob_str else " (Ext.)" if status == "Externe" else ""
-                    vax_widget.setText(f"{given_fmt}{tag}")
-                    lbl_vax.setBackground(bg_done)
-                    due_vax.setBackground(bg_done)
-                    vax_widget.setStyleSheet(input_style_done)
-                    bg_container = QTableWidgetItem()
-                    bg_container.setBackground(bg_done)
-                    self.table.setItem(row_idx, 2, bg_container)
-                    
-                elif status in ["Rupture", "Maladie"]:
-                    if status == "Rupture":
-                        vax_widget.setText("Rupture de stock")
-                        lbl_vax.setBackground(bg_rupture)
-                        due_vax.setBackground(bg_rupture)
-                        lbl_vax.setForeground(text_rupture)
-                        due_vax.setForeground(text_rupture)
-                        vax_widget.setStyleSheet(input_style_rupture)
-                        bg_container = QTableWidgetItem()
-                        bg_container.setBackground(bg_rupture)
-                    else:
-                        vax_widget.setText("Reporté (Maladie)")
-                        lbl_vax.setBackground(bg_maladie)
-                        due_vax.setBackground(bg_maladie)
-                        lbl_vax.setForeground(text_maladie)
-                        due_vax.setForeground(text_maladie)
-                        vax_widget.setStyleSheet(input_style_maladie)
-                        bg_container = QTableWidgetItem()
-                        bg_container.setBackground(bg_maladie)
-                    self.table.setItem(row_idx, 2, bg_container)
-                    
-                else:
-                    vax_widget.setStyleSheet(input_style_empty)
-                    if is_late:
-                        due_vax.setBackground(bg_late)
-                        lbl_vax.setBackground(bg_late)
-                    elif is_today:
-                        due_vax.setBackground(bg_today)
-                        lbl_vax.setBackground(bg_today)
-                    self.table.setItem(row_idx, 2, QTableWidgetItem())
-
-                self.table.setItem(row_idx, 0, lbl_vax)
-                self.table.setItem(row_idx, 1, due_vax)
-                self.table.setCellWidget(row_idx, 2, vax_widget)
-                
-                self.table.setRowHidden(row_idx, is_collapsed)
-                row_idx += 1
-
-        if self.pending_focus_row is not None:
-            widget = self.table.cellWidget(self.pending_focus_row, 2)
-            if widget:
-                widget.setFocus()
-                widget.selectAll()
-            self.pending_focus_row = None
+        self.table.populate(dob_str, records, self.engine, self.settings, self.pending_focus_row)
+        self.pending_focus_row = None
 
     def handle_navigation(self, current_row, direction, is_group, milestone, vax_name, current_status, given_str, dob_str):
         if not self.current_patient_id: return
@@ -855,7 +709,10 @@ class VaxApp(QWidget):
             raw_text_line = f"[{milestone.upper()}] {vax_name:<15} | Prévu: {due_fmt} | "
 
             if status in ["Done", "Externe"]:
-                given_fmt = datetime.strptime(given, "%Y-%m-%d").strftime("%d/%m/%Y")
+                if given == "Inconnue":
+                    given_fmt = "Inconnue"
+                else:
+                    given_fmt = datetime.strptime(given, "%Y-%m-%d").strftime("%d/%m/%Y")
                 tag_html = " (Maternité)" if (status == "Externe" and given == dob_str) else (" (Externe)" if status == "Externe" else "")
                 tag_raw = " (Mat.)" if (status == "Externe" and given == dob_str) else (" (Ext.)" if status == "Externe" else "")
                 

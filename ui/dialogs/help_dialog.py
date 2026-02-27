@@ -8,27 +8,39 @@ class HelpDialog(QDialog):
         layout = QVBoxLayout(self)
         
         help_text = """
-        <h2 style="color: #2980b9;">Guide Rapide - Vaccine Tracker Pro</h2>
+        <h2 style="color: #2980b9;">Guide Rapide - VaxPro</h2>
+        
         <h3>🔍 Recherche Intelligente</h3>
         <ul>
-            <li><b>Recherche par Nom/ID :</b> Tapez le nom pour trouver le dossier.</li>
-            <li><b>Recherche par Date :</b> Tapez une date (ex: <code>21/02/26</code>). L'application affichera tous les enfants vaccinés ce jour-là !</li>
+            <li><b>Recherche par Nom/ID :</b> Tapez le nom/prénom ou l'ID (ex: <code>205/25</code>) pour trouver le dossier.</li>
+            <li><b>Recherche par Date :</b> Tapez une date d'administration (ex: <code>21/02</code>). L'application affichera tous les enfants vaccinés ce jour-là !</li>
+            <li><b>Auto-Déploiement :</b> En ouvrant un dossier, l'application déplie automatiquement la prochaine étape vaccinale attendue.</li>
         </ul>
-        <h3>🎨 Codes Couleurs</h3>
+        
+        <h3>🎨 Code Couleur (Groupes)</h3>
         <ul>
-            <li><span style="background-color: #d4edda; color: #1b5e20; padding: 2px 5px; border-radius: 3px;"><b>🟢 VERT</b></span> : Administré / validé.</li>
-            <li><span style="background-color: #fff3cd; color: #e65100; padding: 2px 5px; border-radius: 3px;"><b>🟡 JAUNE</b></span> : Prévu pour Aujourd'hui.</li>
-            <li><span style="background-color: #f8d7da; color: #b71c1c; padding: 2px 5px; border-radius: 3px;"><b>🔴 ROUGE</b></span> : En retard.</li>
-            <li><span style="background-color: #d2b4de; color: #4a235a; padding: 2px 5px; border-radius: 3px;"><b>🟣 VIOLET</b></span> : Rupture de Stock.</li>
-            <li><span style="background-color: #fdebd0; color: #d35400; padding: 2px 5px; border-radius: 3px;"><b>🟠 ORANGE</b></span> : Maladie / Fièvre.</li>
+            <li><span style="background-color: #d1fae5; color: #064e3b; padding: 2px 5px; border-radius: 3px;"><b>🟢 VERT</b></span> : Groupe entièrement validé.</li>
+            <li><span style="background-color: #fef08a; color: #9a6000; padding: 2px 5px; border-radius: 3px;"><b>🟡 JAUNE</b></span> : Vaccination(s) prévue(s) pour aujourd'hui.</li>
+            <li><span style="background-color: #fee2e2; color: #7f1d1d; padding: 2px 5px; border-radius: 3px;"><b>🔴 ROUGE</b></span> : Groupe en retard.</li>
+            <li><span style="background-color: #f3e8ff; color: #4c1d95; padding: 2px 5px; border-radius: 3px;"><b>🟣 VIOLET</b></span> : Rupture de Stock.</li>
+            <li><span style="background-color: #ffedd5; color: #9a3412; padding: 2px 5px; border-radius: 3px;"><b>🟠 ORANGE</b></span> : Maladie / Fièvre.</li>
         </ul>
-        <h3>⌨️ Raccourcis Super-Rapides</h3>
+        
+        <h3>📅 Indicateurs Visuels (Dates)</h3>
         <ul>
-            <li><b>'T' :</b> Aujourd'hui.</li>
-            <li><b>'TE' :</b> Fait aujourd'hui en externe.</li>
+            <li>✅: Vaccin déjà administré dans le centre (ou Externe).</li>
+            <li>⏳: À faire aujourd'hui ou dans les jours qui viennent.</li>
+            <li>⚠️: En retard (date prévue dépassée de plus d'une semaine).</li>
+            <li>🚫: Vaccin non requis pour ce profil (ex: Ancien protocole).</li>
+        </ul>
+        
+        <h3>⌨️ Raccourcis Clavier (Tableau)</h3>
+        <ul>
+            <li><b>'T' :</b> Marque le vaccin comme fait aujourd'hui (Done).</li>
+            <li><b>'E' :</b> Marque le vaccin comme fait aujourd'hui en externe (Externe).</li>
             <li><b>'N' :</b> Naissance (HB Zéro).</li>
-            <li><b>'R' :</b> Rupture de stock.</li>
-            <li><b>'M' :</b> Maladie / Fièvre.</li>
+            <li><b>'R' :</b> Signaler comme Rupture de stock.</li>
+            <li><b>'M' :</b> Signaler un report pour cause de Maladie.</li>
         </ul>
         """
         text_area = QTextEdit()

@@ -19,5 +19,5 @@
         ]
     },
     "pneumo_mode": "New",
-    "allow_future_dates": true
+    "allow_future_dates": false
 }

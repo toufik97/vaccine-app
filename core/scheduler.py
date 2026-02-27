@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timedelta
+from core.enums import VaccineStatus, PneumoProtocol
 
 class Scheduler:
     def __init__(self):
@@ -33,7 +34,7 @@ class Scheduler:
             return rule_set.get(pneumo_mode, {})
         return rule_set
 
-    def calculate_updates(self, dob_str, records_dict, center_schedule, pneumo_mode="Old"):
+    def calculate_updates(self, dob_str, records_dict, center_schedule, pneumo_mode=PneumoProtocol.OLD.value):
         """
         records_dict should be a dict mapped by vax_name: {"status": ..., "date_given": ..., "due_date": ...}
         pneumo_mode can be "Old" (3 doses) or "New" (4 doses)
@@ -49,7 +50,7 @@ class Scheduler:
             valid_dates_for_milestone = {}
             for vax in vaccines:
                 # If "Pneumo3_NewOnly" is in milestone but pneumo_mode is Old, we skip it
-                if vax == "Pneumo3_NewOnly" and pneumo_mode == "Old":
+                if vax == "Pneumo3_NewOnly" and pneumo_mode == PneumoProtocol.OLD.value:
                     continue
                     
                 rules = self.get_vaccine_rules(vax, pneumo_mode)
@@ -98,14 +99,14 @@ class Scheduler:
                     is_rupture_exception = False
                     if rules.get("rupture_fallback_offset"):
                         for cv in ref_vaxes:
-                            if cv in records_dict and records_dict[cv]["status"] == "Rupture":
+                            if cv in records_dict and records_dict[cv]["status"] == VaccineStatus.RUPTURE.value:
                                 is_rupture_exception = True
                                 break
                                 
                     if not is_rupture_exception:
                         max_core_date = None
                         for cv in ref_vaxes:
-                            if cv in records_dict and records_dict[cv]["status"] in ["Done", "Externe"] and records_dict[cv]["date_given"]:
+                            if cv in records_dict and records_dict[cv]["status"] in [VaccineStatus.DONE.value, VaccineStatus.EXTERNE.value] and records_dict[cv]["date_given"] and records_dict[cv]["date_given"] != "Inconnue":
                                 cv_date = datetime.strptime(records_dict[cv]["date_given"], "%Y-%m-%d")
                             else:
                                 cv_date = valid_dates_for_milestone.get(cv, target_date)
@@ -122,8 +123,11 @@ class Scheduler:
                     continue
                 record = records_dict[vax]
                 
-                if record["status"] in ["Done", "Externe"] and record["date_given"]:
-                    projected_dates[vax] = datetime.strptime(record["date_given"], "%Y-%m-%d")
+                if record["status"] in [VaccineStatus.DONE.value, VaccineStatus.EXTERNE.value] and record["date_given"]:
+                    if record["date_given"] != "Inconnue":
+                        projected_dates[vax] = datetime.strptime(record["date_given"], "%Y-%m-%d")
+                    else:
+                        projected_dates[vax] = base_date
                     continue
                 
                 final_date = self.get_next_available_date(base_date, vax, center_schedule)
@@ -134,7 +138,7 @@ class Scheduler:
                     
         return updates
 
-    def get_core_vaccines(self, milestone_name, pneumo_mode="Old"):
+    def get_core_vaccines(self, milestone_name, pneumo_mode=PneumoProtocol.OLD.value):
         """
         Returns a list of vaccine names for a given milestone that DO NOT have an offset rule.
         Also accurately excludes logic-skipped vaccines like Pneumo3_NewOnly in Old mode.
@@ -143,7 +147,7 @@ class Scheduler:
         for m_name, _, vaccines in self.milestones:
             if m_name == milestone_name:
                 for vax in vaccines:
-                    if vax == "Pneumo3_NewOnly" and pneumo_mode == "Old":
+                    if vax == "Pneumo3_NewOnly" and pneumo_mode == PneumoProtocol.OLD.value:
                         continue
                     
                     rules = self.get_vaccine_rules(vax, pneumo_mode)
@@ -168,10 +172,11 @@ class Scheduler:
             
             if dep_vax in records_dict:
                 rec = records_dict[dep_vax]
-                if rec["status"] in ["Done", "Externe"] and rec["date_given"]:
-                    dep_date = datetime.strptime(rec["date_given"], "%Y-%m-%d").date()
-                    if input_date < dep_date + timedelta(days=min_interval):
-                        return f"Intervalle minimum de {min_interval} jours avec {dep_vax} non respecté."
+                if rec["status"] in [VaccineStatus.DONE.value, VaccineStatus.EXTERNE.value] and rec["date_given"]:
+                    if rec["date_given"] != "Inconnue":
+                        dep_date = datetime.strptime(rec["date_given"], "%Y-%m-%d").date()
+                        if input_date < dep_date + timedelta(days=min_interval):
+                            return f"Intervalle minimum de {min_interval} jours avec {dep_vax} non respecté."
                 else:
                     return f"Le vaccin précédent ({dep_vax}) n'a pas encore été administré."
                     
@@ -191,7 +196,7 @@ class Scheduler:
                 
                 if rules.get("rupture_fallback_offset"):
                     for cv in ref_vaxes:
-                        if cv in records_dict and records_dict[cv]["status"] == "Rupture":
+                        if cv in records_dict and records_dict[cv]["status"] == VaccineStatus.RUPTURE.value:
                             is_rupture_exception = True
                             break
 
@@ -199,10 +204,11 @@ class Scheduler:
                     for cv in ref_vaxes:
                         if cv in records_dict:
                             rec = records_dict[cv]
-                            if rec["status"] in ["Done", "Externe"] and rec["date_given"]:
-                                cv_date = datetime.strptime(rec["date_given"], "%Y-%m-%d").date()
-                                if not max_core_given or cv_date > max_core_given:
-                                    max_core_given = cv_date
+                            if rec["status"] in [VaccineStatus.DONE.value, VaccineStatus.EXTERNE.value] and rec["date_given"]:
+                                if rec["date_given"] != "Inconnue":
+                                    cv_date = datetime.strptime(rec["date_given"], "%Y-%m-%d").date()
+                                    if not max_core_given or cv_date > max_core_given:
+                                        max_core_given = cv_date
                             else:
                                 return f"Les vaccins principaux ({cv}) du groupe {milestone_name} doivent être administrés en premier."
                         else:

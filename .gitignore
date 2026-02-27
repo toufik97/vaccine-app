@@ -4,3 +4,9 @@ vax_pro.db
 oms_data/
 old/
 Rapport*
+test_*.py
+patch_*.py
+features
+config.json
+*.zip
+*.pdf
