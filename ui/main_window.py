@@ -38,7 +38,9 @@ class VaxApp(QWidget):
         default_settings = {
             "dark_mode": True,
             "fold_by_default": True,
-            "secteurs": ["Secteur A", "Secteur B", "Secteur C", "Hors Secteur"],
+            "center_name": "",
+            "center_type": "Urbain",
+            "secteurs": ["Localité A", "Localité B", "Localité C", "Hors Secteur"],
             "center_schedule": {"default": [0, 1, 2, 3, 4]},
             "pneumo_mode": "Old",
             "allow_future_dates": False
@@ -47,6 +49,10 @@ class VaxApp(QWidget):
             try:
                 with open(self.settings_file, "r", encoding="utf-8") as f:
                     self.settings = json.load(f)
+                    if "center_name" not in self.settings:
+                        self.settings["center_name"] = default_settings["center_name"]
+                    if "center_type" not in self.settings:
+                        self.settings["center_type"] = default_settings["center_type"]
                     if "center_schedule" not in self.settings:
                         self.settings["center_schedule"] = default_settings["center_schedule"]
                     if "pneumo_mode" not in self.settings:

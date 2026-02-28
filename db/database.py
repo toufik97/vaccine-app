@@ -292,3 +292,154 @@ class Database:
             result.append((vax, total_doses, ", ".join(dates_str_list)))
             
         return result
+
+    def get_detailed_export_stats(self, date_pattern, exact_date=False):
+        """
+        Fetches detailed stats for the PDF Fiche Mensuelle / Daily report.
+        If exact_date is True, date_pattern is treated as "YYYY-MM-DD".
+        Otherwise it is treated as a LIKE pattern, e.g. "YYYY-MM%".
+        Returns a list of dicts: [ { 'patient_id':.., 'vax_name':.., 'date_given':.., 'dob':.., 'sexe':.., 'address':.. } ]
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if exact_date:
+                query = '''SELECT p.id_label, r.vax_name, r.date_given, p.dob, p.sexe, p.address,
+                           (CASE WHEN EXISTS (SELECT 1 FROM records r2 WHERE r2.patient_id = p.id_label AND r2.vax_name = 'Pneumo3_NewOnly') THEN 1 ELSE 0 END) as has_pneumo3
+                           FROM records r
+                           JOIN patients p ON r.patient_id = p.id_label
+                           WHERE r.status = ? AND r.date_given = ?
+                           ORDER BY r.date_given ASC'''
+            else:
+                query = '''SELECT p.id_label, r.vax_name, r.date_given, p.dob, p.sexe, p.address,
+                           (CASE WHEN EXISTS (SELECT 1 FROM records r2 WHERE r2.patient_id = p.id_label AND r2.vax_name = 'Pneumo3_NewOnly') THEN 1 ELSE 0 END) as has_pneumo3
+                           FROM records r
+                           JOIN patients p ON r.patient_id = p.id_label
+                           WHERE r.status = ? AND r.date_given LIKE ?
+                           ORDER BY r.date_given ASC'''
+                           
+            cursor.execute(query, (VaccineStatus.DONE.value, date_pattern))
+            rows = cursor.fetchall()
+        
+        result = []
+        for patient_id, vax_name, date_given, dob, sexe, address, has_pneumo3 in rows:
+            result.append({
+                "patient_id": patient_id,
+                "vax_name": vax_name,
+                "date_given": date_given,
+                "dob": dob,
+                "sexe": sexe,
+                "address": address,
+                "has_pneumo3": has_pneumo3
+            })
+        return result
+
+    def get_nutrition_register_data(self, dates):
+        """
+        Fetches combined data for the Registre Intégré de Nutrition on a specific date.
+        Returns a list of dicts: [
+            {
+                'record_date': '...',
+                'patient_id': '...',
+                'name': '...',
+                'dob': '...',
+                'sexe': '...',
+                'address': '...',
+                'weight': 0.0,
+                'height': 0.0,
+                'imc': 0.0,
+                'vaccines': ['Vax1', 'Vax2']
+            }
+        ]
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            results = []
+            if not dates:
+                return results
+
+            def chunker(seq, size):
+                return (seq[pos:pos + size] for pos in range(0, len(seq), size))
+            
+            from core.who_zscore import WhoZScoreCalculator
+            calc = WhoZScoreCalculator()
+
+            # Process dates in chunks to stay well below the 999 SQLite variable limit
+            for date_chunk in chunker(dates, 300):
+                placeholders = ",".join(["?"] * len(date_chunk))
+                sql_pairs = f"""
+                    SELECT patient_id, visit_date as event_date FROM visits WHERE visit_date IN ({placeholders})
+                    UNION
+                    SELECT patient_id, date_given as event_date FROM records WHERE date_given IN ({placeholders}) AND status = ?
+                """
+                params = list(date_chunk) + list(date_chunk) + [VaccineStatus.DONE.value]
+                cursor.execute(sql_pairs, params)
+                pairs = cursor.fetchall()
+                if not pairs: continue
+                
+                # Fetch Patients in chunks
+                patient_ids = list(set([p[0] for p in pairs]))
+                patients_dict = {}
+                for p_chunk in chunker(patient_ids, 900):
+                    p_placeholders = ",".join(["?"] * len(p_chunk))
+                    cursor.execute(f"SELECT id_label, name, dob, sexe, address FROM patients WHERE id_label IN ({p_placeholders})", p_chunk)
+                    for r in cursor.fetchall(): patients_dict[r[0]] = r
+                        
+                # Fetch Visits in chunks
+                visits_dict = {}
+                for p_chunk in chunker(patient_ids, 400):
+                    p_placeholders = ",".join(["?"] * len(p_chunk))
+                    cursor.execute(f"SELECT patient_id, visit_date, weight, height, imc FROM visits WHERE visit_date IN ({placeholders}) AND patient_id IN ({p_placeholders})", list(date_chunk) + p_chunk)
+                    for r in cursor.fetchall(): visits_dict[(r[0], r[1])] = r
+                        
+                # Fetch Records in chunks
+                records_dict = {}
+                for p_chunk in chunker(patient_ids, 400):
+                    p_placeholders = ",".join(["?"] * len(p_chunk))
+                    cursor.execute(f"SELECT patient_id, date_given, vax_name FROM records WHERE date_given IN ({placeholders}) AND patient_id IN ({p_placeholders}) AND status = ?", list(date_chunk) + p_chunk + [VaccineStatus.DONE.value])
+                    for r in cursor.fetchall():
+                        key = (r[0], r[1])
+                        if key not in records_dict: records_dict[key] = []
+                        records_dict[key].append(r[2])
+                
+                # Assemble Results Chronologically
+                sorted_pairs = sorted(pairs, key=lambda x: (x[1], x[0]))
+                for p_id, event_date in sorted_pairs:
+                    if p_id not in patients_dict: continue
+                    p_row = patients_dict[p_id]
+                    name, dob, sexe, address = p_row[1], p_row[2], p_row[3], p_row[4]
+                    
+                    v_row = visits_dict.get((p_id, event_date))
+                    weight = v_row[2] if v_row else None
+                    height = v_row[3] if v_row else None
+                    imc = v_row[4] if v_row else None
+                    
+                    vaxes = records_dict.get((p_id, event_date), [])
+                    
+                    z_w, z_h, z_i = None, None, None
+                    if weight or height or imc:
+                        try:
+                            z_w, z_h, z_i = calc.get_visit_zscores(dob, sexe, event_date, 
+                                                                   weight if weight else 0, 
+                                                                   height if height else 0, 
+                                                                   imc if imc else 0)
+                        except Exception:
+                            pass
+                    
+                    results.append({
+                        "record_date": event_date,
+                        "patient_id": p_id,
+                        "name": name,
+                        "dob": dob,
+                        "sexe": sexe,
+                        "address": address,
+                        "weight": weight,
+                        "height": height,
+                        "imc": imc,
+                        "z_w": z_w,
+                        "z_h": z_h,
+                        "z_i": z_i,
+                        "vaccines": vaxes
+                    })
+                    
+        return results
