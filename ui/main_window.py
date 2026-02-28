@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
 from core.engine import VaxEngine
-from core.enums import VaccineStatus
+from core.enums import VaccineStatus, Gender
 from ui.widgets.date_line_edit import DateLineEdit
 from ui.widgets.patient_table import PatientTableWidget
 from ui.dialogs.growth_dialog import GrowthDialog
@@ -317,7 +317,7 @@ class VaxApp(QWidget):
         allergies = self.allergies_in.text().strip()
         email = self.email_in.text().strip()
         
-        new_id = self.engine.register_child(name, parsed_dob, self.sexe_in.currentText(), self.address_in.currentText(), parent, phone, allergies, email, self.settings["center_schedule"])
+        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, self.settings["center_schedule"])
         
         self.name_in.clear()
         self.date_in.clear()
@@ -381,9 +381,9 @@ class VaxApp(QWidget):
         lbl_color = "#3498db" if self.settings.get("dark_mode", True) else "#2c3e50"
         
         # Add visual cue for Sexe
-        gender_icon = "👦" if p[3].lower() == "masculin" else "👧" if p[3].lower() == "féminin" else "👤"
-        gender_color = "#3498db" if p[3].lower() == "masculin" else "#e84393"
-        gender_badge = f"<span style='color: {gender_color}; font-size: 16px;'>{gender_icon} {p[3]}</span>"
+        gender_icon = "👦" if p[3] == Gender.MALE.value else "👧" if p[3] == Gender.FEMALE.value else "👤"
+        gender_color = "#3498db" if p[3] == Gender.MALE.value else "#e84393"
+        gender_badge = f"<span style='color: {gender_color}; font-size: 16px;'>{gender_icon} {Gender.to_ui(p[3])}</span>"
         
         profile_text = f"Dossier N° {p[0]} : {p[1]} | {gender_badge} | {p[4]} | Né(e) le: {dob_formatted}"
         
@@ -495,8 +495,8 @@ class VaxApp(QWidget):
                 parsed_date = datetime.now().date()
                 status_to_save = "Externe"
             elif text in ["N", "NAISS", "NAISSANCE"]:
-                if is_group or vax_name != "HB Zéro":
-                    QMessageBox.warning(self, "Erreur Médicale", "Le raccourci 'N' est strictement réservé au vaccin 'HB Zéro' fait à la maternité.")
+                if is_group or vax_name != "HB0":
+                    QMessageBox.warning(self, "Erreur Médicale", "Le raccourci 'N' est strictement réservé au vaccin 'HB0' fait à la maternité.")
                     widget.setFocus()
                     widget.selectAll()
                     return
@@ -614,7 +614,7 @@ class VaxApp(QWidget):
             if dialog.exec():
                 new_name = dialog.name_in.text()
                 new_dob = dialog.parsed_dob
-                new_sexe = dialog.sexe_in.currentText()
+                new_sexe = Gender.from_ui(dialog.sexe_in.currentText())
                 new_address = dialog.address_in.currentText()
                 new_parent = dialog.parent_in.text()
                 new_phone = dialog.phone_in.text()
@@ -672,7 +672,7 @@ class VaxApp(QWidget):
                     <th>Date de Naissance</th><td>{dob_fmt}</td>
                 </tr>
                 <tr>
-                    <th>Sexe</th><td>{p_data[3]}</td>
+                    <th>Sexe</th><td>{Gender.to_ui(p_data[3])}</td>
                     <th>Téléphone (Parent)</th><td>{p_data[6] if len(p_data)>6 else 'Non renseigné'}</td>
                 </tr>
             </table>
@@ -694,7 +694,7 @@ class VaxApp(QWidget):
 
         # --- RAW TEXT GENERATION (For TXT Export) ---
         raw_text = f"RAPPORT DE VACCINATION (PNI MAROC)\nGénéré le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}\n{'='*50}\n"
-        raw_text += f"INFORMATIONS PATIENT\n{'-'*50}\nDossier N° : {p_data[0]}\nNom : {p_data[1]}\nDate Naissance : {dob_fmt}\nSexe : {p_data[3]}\nSecteur : {p_data[4]}\n"
+        raw_text += f"INFORMATIONS PATIENT\n{'-'*50}\nDossier N° : {p_data[0]}\nNom : {p_data[1]}\nDate Naissance : {dob_fmt}\nSexe : {Gender.to_ui(p_data[3])}\nSecteur : {p_data[4]}\n"
         if len(p_data) > 7 and p_data[7]: raw_text += f"ALLERGIES / NOTES : {p_data[7]}\n"
         raw_text += f"\n{'='*50}\nCALENDRIER VACCINAL\n"
 

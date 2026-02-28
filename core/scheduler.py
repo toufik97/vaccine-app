@@ -157,6 +157,24 @@ class Scheduler:
                 break
         return core_vaccines
 
+    def get_independent_vaccines(self, pneumo_mode=PneumoProtocol.OLD.value):
+        """
+        Returns a list of vaccines that do NOT have any "dependencies" declared in their rules.
+        """
+        independent_vaxes = []
+        for m_name, _, vaccines in self.milestones:
+            for vax in vaccines:
+                if vax == "Pneumo3_NewOnly" and pneumo_mode == PneumoProtocol.OLD.value:
+                    continue
+                
+                rules = self.get_vaccine_rules(vax, pneumo_mode)
+                
+                # A vaccine is independent if it has no dependencies array (or it is empty)
+                if not rules or not rules.get("dependencies"):
+                    independent_vaxes.append(vax)
+                    
+        return independent_vaxes
+
     def validate_vaccine_input(self, dob_str, records_dict, vax_name, pneumo_mode, input_date):
         dob_obj = datetime.strptime(dob_str, "%Y-%m-%d").date()
         rules = self.get_vaccine_rules(vax_name, pneumo_mode)

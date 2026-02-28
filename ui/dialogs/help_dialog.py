@@ -26,6 +26,13 @@ class HelpDialog(QDialog):
             <li><span style="background-color: #ffedd5; color: #9a3412; padding: 2px 5px; border-radius: 3px;"><b>🟠 ORANGE</b></span> : Maladie / Fièvre.</li>
         </ul>
         
+        <h3>📅 Dates Prévues et Progression</h3>
+        <ul>
+            <li><b>Chronologie :</b> Les dates prévues des futurs groupes sont masquées pour éviter de surcharger l'écran.</li>
+            <li><b>Déblocage :</b> Dès qu'un groupe de vaccins est entamé (même partiellement, ex: un seul vaccin fait ou en rupture), les dates prévues du groupe suivant s'affichent automatiquement !</li>
+            <li><b>Vaccins Indépendants :</b> Les premiers vaccins de certaines séries (Vit A1, Vit D1, RR1) ont leurs dates affichées indépendamment de la progression des autres vaccins (car ils n'ont pas de dépendance préalable). Leurs rappels (Vit A2, RR2, etc.) restent soumis aux règles de dépendance et de masquage.</li>
+        </ul>
+        
         <h3>📅 Indicateurs Visuels (Dates)</h3>
         <ul>
             <li>✅: Vaccin déjà administré dans le centre (ou Externe).</li>
@@ -38,7 +45,7 @@ class HelpDialog(QDialog):
         <ul>
             <li><b>'T' :</b> Marque le vaccin comme fait aujourd'hui (Done).</li>
             <li><b>'E' :</b> Marque le vaccin comme fait aujourd'hui en externe (Externe).</li>
-            <li><b>'N' :</b> Naissance (HB Zéro).</li>
+            <li><b>'N' :</b> Naissance (HB0).</li>
             <li><b>'R' :</b> Signaler comme Rupture de stock.</li>
             <li><b>'M' :</b> Signaler un report pour cause de Maladie.</li>
         </ul>

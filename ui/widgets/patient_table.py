@@ -98,10 +98,16 @@ class PatientTableWidget(QTableWidget):
         
         sorted_milestones = sorted(list(grouped.keys()), key=lambda x: milestone_order.get(x.strip().lower(), 999))
         
+        first_empty_milestone_found = False
+
         for milestone in sorted_milestones:
             vax_list = grouped[milestone]
             all_completed = all(v_data[3] in ["Done", "Externe"] for v_data in vax_list)
+            any_completed = any(v_data[3] in ["Done", "Externe"] for v_data in vax_list)
+            is_empty_milestone = not any_completed
             
+            hide_dates = first_empty_milestone_found
+
             dates_list = [v_data[4] for v_data in vax_list if v_data[3] in ["Done", "Externe"] and v_data[4]]
             group_date_str = max(set(dates_list), key=dates_list.count) if (all_completed and dates_list) else None
             
@@ -121,6 +127,16 @@ class PatientTableWidget(QTableWidget):
             
             if today == due_date: is_today = True
             
+            # Fetch dynamic list of independent vaccines from the scheduler rules
+            pneumo_mode = settings.get("pneumo_mode", "Old")
+            INDEPENDENT_VAX = engine.scheduler.get_independent_vaccines(pneumo_mode)
+            
+            has_independent = any(v[1] in INDEPENDENT_VAX for v in vax_list)
+            
+            if hide_dates and not has_independent:
+                is_late = False
+                is_today = False
+            
             group_status = "Done" if all_completed else "Pending"
             is_collapsed = milestone in self.collapsed_groups
             arrow = "▶" if is_collapsed else "▼"
@@ -131,7 +147,16 @@ class PatientTableWidget(QTableWidget):
             lbl_group.setFlags(lbl_group.flags() & ~Qt.ItemFlag.ItemIsEditable)
             lbl_group.setData(Qt.ItemDataRole.UserRole, ("group", milestone))
             
-            due_group = QTableWidgetItem(due_date.strftime("%d/%m/%Y") + icon_delay)
+            if hide_dates and not has_independent:
+                due_group_text = "-"
+            else:
+                if milestone.upper() == "NAISSANCE":
+                    end_interval = base_target + timedelta(days=30)
+                    due_group_text = f"{base_target.strftime('%d/%m/%Y')} - {end_interval.strftime('%d/%m/%Y')}"
+                else:
+                    due_group_text = due_date.strftime("%d/%m/%Y") + icon_delay
+                    
+            due_group = QTableWidgetItem(due_group_text)
             due_group.setFont(bold_font)
             due_group.setForeground(text_color)
             due_group.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -202,13 +227,22 @@ class PatientTableWidget(QTableWidget):
                 lbl_vax.setFlags(lbl_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 due_vax_text = ""
                 if due_date_str:
-                    due_vax_text = datetime.strptime(due_date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    if status in ["Done", "Externe"]:
-                        due_vax_text += " ✅"
-                    elif is_late:
-                        due_vax_text += " ⚠️"
-                    elif is_today:
-                        due_vax_text += " ⏳"
+                    if hide_dates and status not in ["Done", "Externe"] and vax_name not in INDEPENDENT_VAX:
+                        due_vax_text = "-"
+                    else:
+                        due_vax_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+                        if milestone.upper() == "NAISSANCE":
+                            end_vax_interval = due_vax_date + timedelta(days=30)
+                            due_vax_text = f"{due_vax_date.strftime('%d/%m/%Y')} - {end_vax_interval.strftime('%d/%m/%Y')}"
+                        else:
+                            due_vax_text = due_vax_date.strftime("%d/%m/%Y")
+                            
+                        if status in ["Done", "Externe"]:
+                            due_vax_text += " ✅"
+                        elif is_late:
+                            due_vax_text += " ⚠️"
+                        elif is_today:
+                            due_vax_text += " ⏳"
                     
                 vax_widget = DateLineEdit(row_idx)
                 vax_widget.setPlaceholderText("Date, T, N, E, R, M")
@@ -295,6 +329,9 @@ class PatientTableWidget(QTableWidget):
                 self.setRowHeight(row_idx, 38)
                 self.setRowHidden(row_idx, is_collapsed)
                 row_idx += 1
+                
+            if is_empty_milestone:
+                first_empty_milestone_found = True
 
         if pending_focus_row is not None:
             widget = self.cellWidget(pending_focus_row, 2)

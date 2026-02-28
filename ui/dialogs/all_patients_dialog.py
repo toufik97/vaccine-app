@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QComboBox, QLabel, QTableWidget, QHeaderView, QPushButton, QMessageBox
 from PyQt6.QtCore import Qt
 from datetime import datetime
+from core.enums import Gender
 from ui.widgets.sort_item import SortItem
 
 class AllPatientsDialog(QDialog):
@@ -47,7 +48,7 @@ class AllPatientsDialog(QDialog):
             self.table.setItem(i, 1, SortItem(str(p[1])))
             dob_fmt = datetime.strptime(p[2], "%Y-%m-%d").strftime("%d/%m/%Y")
             self.table.setItem(i, 2, SortItem(dob_fmt))
-            self.table.setItem(i, 3, SortItem(str(p[3])))
+            self.table.setItem(i, 3, SortItem(Gender.to_ui(str(p[3]))))
             self.table.setItem(i, 4, SortItem(str(p[4])))
             self.table.setItem(i, 5, SortItem(str(p[6]) if len(p)>6 else ""))
             

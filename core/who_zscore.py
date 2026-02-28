@@ -2,6 +2,7 @@ import os
 import csv
 import math
 from datetime import datetime
+from core.enums import Gender
 
 class WhoZScoreCalculator:
     def __init__(self):
@@ -10,9 +11,9 @@ class WhoZScoreCalculator:
     def load_who_data(self):
         data = {"Poids": {}, "Taille": {}, "IMC": {}}
         files = {
-            "Poids": {"Masculin": "oms_data/weight_boy.csv", "Féminin": "oms_data/weight_girl.csv"},
-            "Taille": {"Masculin": "oms_data/height_boy.csv", "Féminin": "oms_data/height_girl.csv"},
-            "IMC": {"Masculin": "oms_data/bmi_boy.csv", "Féminin": "oms_data/bmi_girl.csv"}
+            "Poids": {Gender.MALE.value: "oms_data/weight_boy.csv", Gender.FEMALE.value: "oms_data/weight_girl.csv"},
+            "Taille": {Gender.MALE.value: "oms_data/height_boy.csv", Gender.FEMALE.value: "oms_data/height_girl.csv"},
+            "IMC": {Gender.MALE.value: "oms_data/bmi_boy.csv", Gender.FEMALE.value: "oms_data/bmi_girl.csv"}
         }
 
         for metric, sexes in files.items():

@@ -10,3 +10,24 @@ class VaccineStatus(Enum):
 class PneumoProtocol(Enum):
     OLD = "Old"
     NEW = "New"
+
+class Gender(Enum):
+    MALE = "M"
+    FEMALE = "F"
+    
+    @classmethod
+    def from_ui(cls, text: str) -> str:
+        text = text.lower().strip()
+        if text.startswith("m") or text == "garçon":
+            return cls.MALE.value
+        elif text.startswith("f") or text == "fille":
+            return cls.FEMALE.value
+        raise ValueError(f"Sexe non reconnu: {text}")
+
+    @classmethod
+    def to_ui(cls, value: str) -> str:
+        if value == cls.MALE.value:
+            return "Masculin"
+        elif value == cls.FEMALE.value:
+            return "Féminin"
+        return value

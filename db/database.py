@@ -1,7 +1,10 @@
 import sqlite3
+import json
+import uuid
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from contextlib import contextmanager
-from core.enums import VaccineStatus
+from core.enums import VaccineStatus, Gender
 
 class Database:
     def __init__(self, db_path='vax_pro.db'):
@@ -63,6 +66,9 @@ class Database:
             return f"{max(ids) + 1 if ids else 1}/{year}"
 
     def register_child(self, new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, initial_records):
+        if sexe not in [Gender.MALE.value, Gender.FEMALE.value]:
+            raise ValueError(f"Sexe invalide: '{sexe}'. Doit être '{Gender.MALE.value}' ou '{Gender.FEMALE.value}'.")
+            
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO patients (id_label, name, dob, sexe, address, parent_name, phone, allergies, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
@@ -224,6 +230,9 @@ class Database:
             return res
 
     def update_patient(self, p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email):
+        if sexe not in [Gender.MALE.value, Gender.FEMALE.value]:
+            raise ValueError(f"Sexe invalide: '{sexe}'. Doit être '{Gender.MALE.value}' ou '{Gender.FEMALE.value}'.")
+            
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("UPDATE patients SET name = ?, dob = ?, sexe = ?, address = ?, parent_name = ?, phone = ?, allergies = ?, email = ? WHERE id_label = ?", 

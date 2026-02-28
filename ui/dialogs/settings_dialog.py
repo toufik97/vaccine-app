@@ -66,7 +66,7 @@ class SettingsDialog(QDialog):
         self.vax_combo.addItem("📍 Règle Générale (Tous les vaccins)", "default")
         self.vax_combo.addItem("Vaccin BCG", "BCG")
         self.vax_combo.addItem("Vaccin RR1", "RR1")
-        self.vax_combo.addItem("Rappel DTC", "Rappel DTC")
+        self.vax_combo.addItem("Rappel DTC1", "Rappel DTC1")
         self.vax_combo.currentIndexChanged.connect(self.load_days_for_vax)
         layout_plan.addWidget(self.vax_combo)
         

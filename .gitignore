@@ -1,6 +1,14 @@
 __pycache__/
 *.pyc
-vax_pro.db
+*.db
+*.log
+*.txt
+debug_*
+migrate_*.py
+error_log.*
+extract.py
+git_status_output.txt
+monthly report.png
 oms_data/
 old/
 Rapport*

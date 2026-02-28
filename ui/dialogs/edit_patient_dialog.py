@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox, QPushButton, QMessageBox
 from datetime import datetime
+from core.enums import Gender
 
 class EditPatientDialog(QDialog):
     def __init__(self, parent, patient_data, secteurs):
@@ -9,7 +10,7 @@ class EditPatientDialog(QDialog):
         self.p_id = patient_data[0]
         self.name = patient_data[1]
         self.dob_str = patient_data[2]
-        self.sexe = patient_data[3]
+        self.sexe = Gender.to_ui(patient_data[3])
         self.address = patient_data[4]
         self.parent_name = patient_data[5] if len(patient_data) > 5 else ""
         self.phone = patient_data[6] if len(patient_data) > 6 else ""
