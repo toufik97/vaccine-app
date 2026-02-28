@@ -20,7 +20,7 @@ class AllPatientsDialog(QDialog):
         self.search_bar.textChanged.connect(self.filter_table)
         
         self.sector_filter = QComboBox()
-        self.sector_filter.addItem("Tous les secteurs")
+        self.sector_filter.addItem("Toutes les localités")
         self.sector_filter.addItems(secteurs)
         self.sector_filter.currentTextChanged.connect(self.filter_table)
 
@@ -29,14 +29,14 @@ class AllPatientsDialog(QDialog):
         self.sexe_filter.currentTextChanged.connect(self.filter_table)
         
         filter_layout.addWidget(self.search_bar, 3)
-        filter_layout.addWidget(QLabel("Secteur :"))
+        filter_layout.addWidget(QLabel("Localité :"))
         filter_layout.addWidget(self.sector_filter, 1)
         filter_layout.addWidget(QLabel("Sexe :"))
         filter_layout.addWidget(self.sexe_filter, 1)
         layout.addLayout(filter_layout)
         
         self.table = QTableWidget(0, 7) 
-        self.table.setHorizontalHeaderLabels(["ID", "Nom complet", "Date Naissance", "Sexe", "Secteur", "Téléphone", "Vaccin(s) du Jour"])
+        self.table.setHorizontalHeaderLabels(["ID", "Nom complet", "Date Naissance", "Sexe", "Localité", "Téléphone", "Vaccin(s) du Jour"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -98,7 +98,7 @@ class AllPatientsDialog(QDialog):
             item_sector = self.table.item(row, 4).text()
             item_sexe = self.table.item(row, 3).text()
             
-            match_sector = (sector_text == "Tous les secteurs" or item_sector == sector_text)
+            match_sector = (sector_text == "Toutes les localités" or item_sector == sector_text)
             match_sexe = (sexe_text == "Tous les sexes" or item_sexe == sexe_text)
             match_search = False
             

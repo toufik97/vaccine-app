@@ -30,7 +30,19 @@ class SettingsDialog(QDialog):
         layout_gen.addWidget(self.fold_combo)
         layout_gen.addSpacing(10)
         
-        layout_gen.addWidget(QLabel("<b>Vos Secteurs / Adresses :</b>\n(Séparez par des virgules)"))
+        layout_gen.addWidget(QLabel("<b>Détails de l'Etablissement :</b>"))
+        self.center_name_input = QLineEdit()
+        self.center_name_input.setPlaceholderText("Nom du Centre de Santé")
+        self.center_name_input.setText(current_settings.get("center_name", ""))
+        layout_gen.addWidget(self.center_name_input)
+        
+        self.center_type_combo = QComboBox()
+        self.center_type_combo.addItems(["Urbain", "Rural"])
+        self.center_type_combo.setCurrentText(current_settings.get("center_type", "Urbain"))
+        layout_gen.addWidget(self.center_type_combo)
+        layout_gen.addSpacing(10)
+
+        layout_gen.addWidget(QLabel("<b>Vos Localités :</b>\n(Séparez par des virgules)"))
         self.sectors_input = QLineEdit()
         self.sectors_input.setText(", ".join(current_settings.get("secteurs", [])))
         layout_gen.addWidget(self.sectors_input)
@@ -148,6 +160,8 @@ class SettingsDialog(QDialog):
         sects = [s.strip() for s in self.sectors_input.text().split(",") if s.strip()]
         if not sects: sects = ["Secteur A"] 
         return {
+            "center_name": self.center_name_input.text().strip(),
+            "center_type": self.center_type_combo.currentText(),
             "dark_mode": self.theme_combo.currentText() == "Mode Sombre",
             "fold_by_default": self.fold_combo.currentText() == "Groupes pliés (Vue condensée)",
             "secteurs": sects,

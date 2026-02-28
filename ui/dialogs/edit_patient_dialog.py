@@ -34,7 +34,7 @@ class EditPatientDialog(QDialog):
         self.address_in = QComboBox()
         self.address_in.addItems(secteurs)
         self.address_in.setCurrentText(self.address)
-        h_layout1.addWidget(QLabel("Secteur :"))
+        h_layout1.addWidget(QLabel("Localité :"))
         h_layout1.addWidget(self.address_in)
         layout.addLayout(h_layout1)
         
