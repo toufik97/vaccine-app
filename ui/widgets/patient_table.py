@@ -90,7 +90,7 @@ class PatientTableWidget(QTableWidget):
             input_style_rupture = "background-color: transparent; border: none; font-weight: bold; color: #6b21a8;"
             input_style_maladie = f"background-color: transparent; border: none; font-weight: bold; color: {text_maladie.name()};"
 
-        bold_font = QFont()
+        bold_font = self.font()
         bold_font.setBold(True)
 
         row_idx = 0

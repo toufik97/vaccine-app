@@ -250,7 +250,13 @@
             ]
         },
         "VPO (5 Ans)": {
-            "min_age_days": 1825
+            "min_age_days": 1825,
+            "dependencies": [
+                {
+                    "vaccine": "VPO (18 Mois)",
+                    "min_interval_days": 1277
+                }
+            ]
         },
         "Pneumo1": {
             "Old": {
