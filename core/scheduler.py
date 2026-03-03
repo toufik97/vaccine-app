@@ -1,20 +1,18 @@
 import json
-import os
 from datetime import datetime, timedelta
 from core.enums import VaccineStatus, PneumoProtocol
 
 class Scheduler:
-    def __init__(self):
+    def __init__(self, api):
+        self.api = api
         self.milestones = []
         self.rules = {}
         self.load_protocols()
 
     def load_protocols(self):
-        protocol_file = 'protocols.json'
-        if os.path.exists(protocol_file):
-            with open(protocol_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-
+        data = self.api.get_vaccine_families_with_doses()
+        
+        if data and "milestones_order" in data:
             # Rebuild the old self.milestones format: [(name, target_days, [vaccines...]), ...]
             milestones_order = data.get("milestones_order", [])
             vaccines = data.get("vaccines", [])
@@ -48,9 +46,6 @@ class Scheduler:
             for m in milestones_order:
                 name = m["name"]
                 target = m["target_days"]
-                # In the old JSON, the order of vaccines in the array mattered for UI display.
-                # However, Python dicts maintain insertion order, and we essentially maintain
-                # the order they appear in the JSON "vaccines" section, which is generally what we want.
                 self.milestones.append((name, target, milestone_dict[name]["doses"]))
 
         else:

@@ -91,7 +91,6 @@ class VaccineManagerDialog(QDialog):
         self.setWindowTitle("💉 Gestionnaire de Vaccins")
         self.setMinimumSize(900, 600)
         
-        self.protocols_file = 'protocols.json'
         self.data = {"vaccines": [], "milestones_order": []}
         
         self.current_vaccine_index = -1
@@ -184,21 +183,25 @@ class VaccineManagerDialog(QDialog):
         # Global Save
         bottom_layout = QHBoxLayout()
         bottom_layout.addStretch()
-        self.btn_save_all = QPushButton("💾 Sauvegarder dans protocols.json")
+        self.btn_save_all = QPushButton("💾 Sauvegarder dans la Base de Données")
         self.btn_save_all.setStyleSheet("background-color: #27ae60; color: white; padding: 10px; font-weight: bold;")
-        self.btn_save_all.clicked.connect(self.save_to_file)
+        self.btn_save_all.clicked.connect(self.save_to_db)
         bottom_layout.addWidget(self.btn_save_all)
         
         layout.addLayout(bottom_layout)
         self.clear_form()
         
     def load_data(self):
-        if not os.path.exists(self.protocols_file):
-            QMessageBox.warning(self, "Erreur", "Fichier protocols.json introuvable.")
-            return
-            
-        with open(self.protocols_file, 'r', encoding='utf-8') as f:
-            self.data = json.load(f)
+        try:
+            main_app = self.parent().parent()
+            if hasattr(main_app, 'engine'):
+                self.data = main_app.engine.db.get_all_vaccine_families_with_doses()
+            else:
+                QMessageBox.warning(self, "Erreur", "Impossible de contacter la base de données (Engine introuvable).")
+                return
+        except Exception as e:
+            # Standalone mode dummy data
+            self.data = {"vaccines": [], "milestones_order": []}
             
         self.refresh_vaccine_list()
         
@@ -371,11 +374,14 @@ class VaccineManagerDialog(QDialog):
                 del self.data["vaccines"][self.current_vaccine_index]["doses"][index]
                 self.refresh_doses_tree()
             
-    def save_to_file(self):
+    def save_to_db(self):
         try:
-            with open(self.protocols_file, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=4, ensure_ascii=False)
-            QMessageBox.information(self, "Succès", "Fichier protocols.json sauvegardé avec succès.")
+            main_app = self.parent().parent()
+            if hasattr(main_app, 'engine') and hasattr(main_app.engine, 'api'):
+                main_app.engine.api.save_protocols_to_api(self.data)
+                QMessageBox.information(self, "Succès", "Sauvegardé avec succès via l'API Rest Django.")
+            else:
+                QMessageBox.warning(self, "Erreur", "Engine / API non trouvés.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la sauvegarde : {e}")
 

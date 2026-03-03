@@ -45,7 +45,7 @@ class SettingsDialog(QDialog):
 
         layout_gen.addWidget(QLabel("<b>Vos Localités :</b>\n(Séparez par des virgules)"))
         self.sectors_input = QLineEdit()
-        self.sectors_input.setText(", ".join(current_settings.get("secteurs", [])))
+        self.sectors_input.setText(", ".join(current_settings.get("localities", [])))
         layout_gen.addWidget(self.sectors_input)
         layout_gen.addSpacing(10)
         
@@ -165,7 +165,7 @@ class SettingsDialog(QDialog):
             "center_type": self.center_type_combo.currentText(),
             "dark_mode": self.theme_combo.currentText() == "Mode Sombre",
             "fold_by_default": self.fold_combo.currentText() == "Groupes pliés (Vue condensée)",
-            "secteurs": sects,
+            "localities": sects,
             "center_schedule": self.current_schedule,
             "pneumo_mode": "New" if self.pneumo_combo.currentIndex() == 1 else "Old",
             "allow_future_dates": self.future_dates_cb.isChecked()
@@ -180,4 +180,4 @@ class SettingsDialog(QDialog):
             self.parent().engine.load_protocols()
             QMessageBox.information(self, "Succès", "Protocoles rechargés avec succès !\nTous les nouveaux dossiers utiliseront ce calendrier.")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur Critique", f"Erreur lors du rechargement. Vérifiez la syntaxe de votre fichier JSON.\n\nDétail: {e}")
+            QMessageBox.critical(self, "Erreur Critique", f"Erreur lors du rechargement. Vérifiez la base de données.\n\nDétail: {e}")

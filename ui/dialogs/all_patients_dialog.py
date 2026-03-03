@@ -5,7 +5,7 @@ from core.enums import Gender
 from ui.widgets.sort_item import SortItem
 
 class AllPatientsDialog(QDialog):
-    def __init__(self, parent, patients_data, secteurs, engine=None, title="Tous les Dossiers Enregistrés"):
+    def __init__(self, parent, patients_data, localities, engine=None, title="Tous les Dossiers Enregistrés"):
         super().__init__(parent)
         self.engine = engine
         self.setWindowTitle(title)
@@ -21,7 +21,7 @@ class AllPatientsDialog(QDialog):
         
         self.sector_filter = QComboBox()
         self.sector_filter.addItem("Toutes les localités")
-        self.sector_filter.addItems(secteurs)
+        self.sector_filter.addItems(localities)
         self.sector_filter.currentTextChanged.connect(self.filter_table)
 
         self.sexe_filter = QComboBox()

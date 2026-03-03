@@ -3,7 +3,7 @@ from datetime import datetime
 from core.enums import Gender
 
 class EditPatientDialog(QDialog):
-    def __init__(self, parent, patient_data, secteurs):
+    def __init__(self, parent, patient_data, localities):
         super().__init__(parent)
         self.setWindowTitle("Modifier le Dossier")
         
@@ -32,7 +32,7 @@ class EditPatientDialog(QDialog):
         h_layout1.addWidget(self.sexe_in)
         
         self.address_in = QComboBox()
-        self.address_in.addItems(secteurs)
+        self.address_in.addItems(localities)
         self.address_in.setCurrentText(self.address)
         h_layout1.addWidget(QLabel("Localité :"))
         h_layout1.addWidget(self.address_in)

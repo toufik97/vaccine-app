@@ -1,6 +1,7 @@
 from db.database import Database
 from core.who_zscore import WhoZScoreCalculator
 from core.scheduler import Scheduler
+from core.api_client import ApiClient
 from datetime import datetime, timedelta
 from core.enums import PneumoProtocol, VaccineStatus
 
@@ -11,25 +12,21 @@ class VaxEngine:
     """
     def __init__(self):
         self.db = Database('vax_pro.db')
+        self.api = ApiClient()
         self.zscore_calc = WhoZScoreCalculator()
-        self.scheduler = Scheduler()
+        self.scheduler = Scheduler(self.api)
         self.load_config()
 
     def load_config(self):
-        self.config_file = 'config.json'
-        # Ensure we always parse the latest file locally
-        import os, json
-        if os.path.exists(self.config_file):
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                self.config = json.load(f)
+        settings_dict = self.api.get_settings()
+        if settings_dict and "config" in settings_dict:
+            self.config = settings_dict["config"]
         else:
             self.config = {"pneumo_mode": PneumoProtocol.OLD.value}
             self.save_config()
 
     def save_config(self):
-        import json
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(self.config, f, indent=4)
+        self.api.save_settings({"config": self.config})
         
     def load_protocols(self):
         """ Reloads the protocols from json and sets them. """

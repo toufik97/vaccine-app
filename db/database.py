@@ -30,6 +30,15 @@ class Database:
             cursor.execute('''CREATE TABLE IF NOT EXISTS visits 
                               (id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT, visit_date DATE, weight REAL, height REAL, imc REAL)''')
             
+            cursor.execute('''CREATE TABLE IF NOT EXISTS settings 
+                              (key TEXT PRIMARY KEY, value TEXT)''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS vaccine_families 
+                              (id_name TEXT PRIMARY KEY, display_name TEXT, description TEXT)''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS milestones 
+                              (name TEXT PRIMARY KEY, target_days INTEGER, order_index INTEGER)''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS vaccine_doses 
+                              (id TEXT PRIMARY KEY, family_id TEXT, milestone_name TEXT, pneumo_protocol TEXT, min_age_days INTEGER, offset_days INTEGER, advanced_rules_json TEXT)''')
+                              
             cursor.execute("PRAGMA table_info(records)")
             columns_records = [col[1] for col in cursor.fetchall()]
             if 'observations' not in columns_records:
@@ -48,6 +57,9 @@ class Database:
             if 'pneumo_mode' not in columns_patients:
                 cursor.execute("ALTER TABLE patients ADD COLUMN pneumo_mode TEXT DEFAULT 'Old'")
                 
+            # Perform Data Migration if necessary
+            self._seed_database_if_empty(cursor)
+                
             cursor.execute("SELECT id_label, dob FROM patients")
             patients = cursor.fetchall()
             for p_id, dob_str in patients:
@@ -58,6 +70,68 @@ class Database:
                     cursor.execute("INSERT INTO records (patient_id, milestone, vax_name, due_date, status, date_given, observations) VALUES (?, ?, ?, ?, ?, ?, ?)", 
                                    (p_id, "4 Mois", "Rota3", due, VaccineStatus.PENDING.value, None, ""))
             conn.commit()
+
+    def _seed_database_if_empty(self, cursor):
+        import os
+        
+        # Check settings
+        cursor.execute("SELECT COUNT(*) FROM settings")
+        if cursor.fetchone()[0] == 0:
+            config_file = 'config.json'
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                    for k, v in config.items():
+                        cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, json.dumps(v)))
+                except Exception as e:
+                    pass
+        
+        # Check protocols
+        cursor.execute("SELECT COUNT(*) FROM vaccine_families")
+        if cursor.fetchone()[0] == 0:
+            protocols_file = 'protocols.json'
+            if os.path.exists(protocols_file):
+                try:
+                    with open(protocols_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        
+                    # Seed Milestones
+                    for idx, m in enumerate(data.get("milestones_order", [])):
+                        cursor.execute("INSERT INTO milestones (name, target_days, order_index) VALUES (?, ?, ?)",
+                                       (m["name"], m["target_days"], idx))
+                                       
+                    # Seed Families & Doses
+                    for family in data.get("vaccines", []):
+                        f_id = family.get("id", str(uuid.uuid4()))
+                        cursor.execute("INSERT INTO vaccine_families (id_name, display_name, description) VALUES (?, ?, ?)",
+                                       (f_id, family.get("name", ""), family.get("description", "")))
+                                       
+                        for dose in family.get("doses", []):
+                            d_id = dose["id"]
+                            milestone = dose["milestone"]
+                            rules = dose.get("rules", {})
+                            
+                            if "Old" in rules or "New" in rules:
+                                # Multi-protocol dose
+                                for protocol in ["Old", "New"]:
+                                    if protocol in rules:
+                                        p_rules = rules[protocol]
+                                        p_min = p_rules.get("min_age_days", 0)
+                                        p_offset = p_rules.get("offset_from_milestone_days", 0)
+                                        p_adv = {k:v for k,v in p_rules.items() if k not in ["min_age_days", "offset_from_milestone_days"]}
+                                        cursor.execute("INSERT INTO vaccine_doses (id, family_id, milestone_name, pneumo_protocol, min_age_days, offset_days, advanced_rules_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                                       (d_id, f_id, milestone, protocol, p_min, p_offset, json.dumps(p_adv)))
+                            else:
+                                # Generic dose
+                                p_min = rules.get("min_age_days", 0)
+                                p_offset = rules.get("offset_from_milestone_days", 0)
+                                p_adv = {k:v for k,v in rules.items() if k not in ["min_age_days", "offset_from_milestone_days"]}
+                                cursor.execute("INSERT INTO vaccine_doses (id, family_id, milestone_name, pneumo_protocol, min_age_days, offset_days, advanced_rules_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                               (d_id, f_id, milestone, "All", p_min, p_offset, json.dumps(p_adv)))
+                                               
+                except Exception as e:
+                    pass
 
     def generate_id(self):
         year = datetime.now().strftime("%y")
@@ -490,3 +564,87 @@ class Database:
                     })
                     
         return results
+
+    # --- SYSTEM DATA (SETTINGS / CONFIG) ---
+    def get_system_data(self, key: str, default_val=None) -> Any:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            if row:
+                try:
+                    return json.loads(row[0])
+                except json.JSONDecodeError:
+                    return row[0]
+            return default_val
+
+    def set_system_data(self, key: str, value: Any):
+        val_str = json.dumps(value) if isinstance(value, (dict, list, bool, int, float)) else str(value)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val_str))
+            conn.commit()
+
+    # --- RELATIONAL PROTOCOLS GETTERS ---
+    def get_all_milestones(self) -> List[Dict]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name, target_days, order_index FROM milestones ORDER BY order_index ASC")
+            return [{"name": r[0], "target_days": r[1], "order_index": r[2]} for r in cursor.fetchall()]
+
+    def get_all_vaccine_families_with_doses(self) -> List[Dict]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Fetch Milestones mapping just in case
+            cursor.execute("SELECT name, target_days, order_index FROM milestones ORDER BY order_index ASC")
+            milestones = [{"name": r[0], "target_days": r[1]} for r in cursor.fetchall()]
+
+            cursor.execute("SELECT id_name, display_name, description FROM vaccine_families")
+            families = cursor.fetchall()
+            
+            result = []
+            for f_id, f_name, f_desc in families:
+                cursor.execute("SELECT id, milestone_name, pneumo_protocol, min_age_days, offset_days, advanced_rules_json FROM vaccine_doses WHERE family_id = ?", (f_id,))
+                doses_rows = cursor.fetchall()
+                
+                doses = []
+                for d_id, d_mile, d_proto, d_min, d_off, d_adv_json in doses_rows:
+                    rules = {}
+                    if d_min > 0: rules["min_age_days"] = d_min
+                    if d_off > 0: rules["offset_from_milestone_days"] = d_off
+                    try:
+                        adv = json.loads(d_adv_json)
+                        if isinstance(adv, dict):
+                            rules.update(adv)
+                    except:
+                        pass
+                        
+                    # Build legacy compatible dose dict
+                    dose_dict = {"id": d_id, "milestone": d_mile}
+                    if d_proto in ["Old", "New"]:
+                        dose_dict["rules"] = {d_proto: rules}
+                    else:
+                        dose_dict["rules"] = rules
+                        
+                    doses.append(dose_dict)
+                    
+                # Merge multi-protocol split rows
+                merged_doses = {}
+                for d in doses:
+                    d_id = d["id"]
+                    if d_id not in merged_doses:
+                        merged_doses[d_id] = d
+                    else:
+                        # Merge rules dict
+                        if "Old" in d["rules"] or "New" in d["rules"]:
+                            merged_doses[d_id]["rules"].update(d["rules"])
+                
+                result.append({
+                    "id": f_id,
+                    "name": f_name,
+                    "description": f_desc,
+                    "doses": list(merged_doses.values())
+                })
+                
+            return {"milestones_order": milestones, "vaccines": result}
