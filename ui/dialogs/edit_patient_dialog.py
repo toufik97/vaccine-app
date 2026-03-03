@@ -3,7 +3,7 @@ from datetime import datetime
 from core.enums import Gender
 
 class EditPatientDialog(QDialog):
-    def __init__(self, parent, patient_data, secteurs):
+    def __init__(self, parent, patient_data, localities):
         super().__init__(parent)
         self.setWindowTitle("Modifier le Dossier")
         
@@ -32,7 +32,7 @@ class EditPatientDialog(QDialog):
         h_layout1.addWidget(self.sexe_in)
         
         self.address_in = QComboBox()
-        self.address_in.addItems(secteurs)
+        self.address_in.addItems(localities)
         self.address_in.setCurrentText(self.address)
         h_layout1.addWidget(QLabel("Localité :"))
         h_layout1.addWidget(self.address_in)
@@ -62,6 +62,25 @@ class EditPatientDialog(QDialog):
         layout.addWidget(QLabel("Allergies / Notes :"))
         self.allergies_in = QLineEdit(self.allergies)
         layout.addWidget(self.allergies_in)
+
+        layout.addSpacing(10)
+        layout.addWidget(QLabel("<b>PROTOCOLES SPÉCIFIQUES</b>"))
+        
+        self.pneumo_in = QComboBox()
+        self.pneumo_in.addItems(["Old", "New"])
+        # We need the current patient's pneumo mode. We should pass it via patient_data or engine.
+        # Since patient_data doesn't inherently include it in the generic fetch, we'll try to fetch or default
+        try:
+            current_mode = self.parent().engine.db.get_patient_pneumo_mode(self.p_id)
+        except Exception:
+            current_mode = "Old"
+        self.pneumo_in.setCurrentText(current_mode)
+        
+        h_pneumo = QHBoxLayout()
+        h_pneumo.addWidget(QLabel("Pneumocoque :"))
+        h_pneumo.addWidget(self.pneumo_in)
+        h_pneumo.addStretch()
+        layout.addLayout(h_pneumo)
         
         self.parsed_dob = None
         

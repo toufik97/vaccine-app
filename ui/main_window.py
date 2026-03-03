@@ -28,7 +28,6 @@ class VaxApp(QWidget):
         self.pending_focus_row = None 
         self.collapsed_groups = set() 
         
-        self.settings_file = "config.json"
         self.load_settings()
         
         self.initUI()
@@ -40,33 +39,32 @@ class VaxApp(QWidget):
             "fold_by_default": True,
             "center_name": "",
             "center_type": "Urbain",
-            "secteurs": ["Localité A", "Localité B", "Localité C", "Hors Secteur"],
+            "localities": ["Localité A", "Localité B", "Localité C", "Hors Secteur"],
             "center_schedule": {"default": [0, 1, 2, 3, 4]},
             "pneumo_mode": "Old",
             "allow_future_dates": False
         }
-        if os.path.exists(self.settings_file):
-            try:
-                with open(self.settings_file, "r", encoding="utf-8") as f:
-                    self.settings = json.load(f)
-                    if "center_name" not in self.settings:
-                        self.settings["center_name"] = default_settings["center_name"]
-                    if "center_type" not in self.settings:
-                        self.settings["center_type"] = default_settings["center_type"]
-                    if "center_schedule" not in self.settings:
-                        self.settings["center_schedule"] = default_settings["center_schedule"]
-                    if "pneumo_mode" not in self.settings:
-                        self.settings["pneumo_mode"] = default_settings["pneumo_mode"]
-                    if "allow_future_dates" not in self.settings:
-                        self.settings["allow_future_dates"] = default_settings["allow_future_dates"]
-            except Exception:
-                self.settings = default_settings.copy()
-        else:
+        
+        self.settings = getattr(self.engine, 'config', {})
+        if not self.settings:
             self.settings = default_settings.copy()
+            
+        modified = False
+        for k, v in default_settings.items():
+            if k not in self.settings:
+                # Migrate old "secteurs" to "localities" if it exists
+                if k == "localities" and "secteurs" in self.settings:
+                    self.settings["localities"] = self.settings.pop("secteurs")
+                else:
+                    self.settings[k] = v
+                modified = True
+                
+        if modified:
+            self.save_settings()
 
     def save_settings(self):
-        with open(self.settings_file, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=4)
+        self.engine.config = self.settings
+        self.engine.save_config()
 
     def initUI(self):
         self.setWindowTitle('Vaccine Tracker Pro - Morocco 2026')
@@ -118,7 +116,7 @@ class VaxApp(QWidget):
         h_info.addWidget(self.sexe_in)
         
         self.address_in = QComboBox()
-        self.address_in.addItems(self.settings["secteurs"])
+        self.address_in.addItems(self.settings["localities"])
         h_info.addWidget(self.address_in)
         left_panel.addLayout(h_info)
         
@@ -144,7 +142,7 @@ class VaxApp(QWidget):
         self.allergies_in = QLineEdit()
         self.allergies_in.setPlaceholderText("Allergies / Notes médicales")
         left_panel.addWidget(self.allergies_in)
-        
+
         save_btn = QPushButton("Enregistrer Nouveau")
         save_btn.setObjectName("saveBtn")
         save_btn.clicked.connect(self.handle_save)
@@ -207,9 +205,10 @@ class VaxApp(QWidget):
                 
             current_addr = self.address_in.currentText()
             self.address_in.clear()
-            self.address_in.addItems(self.settings["secteurs"])
-            if current_addr in self.settings["secteurs"]:
-                self.address_in.setCurrentText(current_addr)
+            if "localities" in self.settings:
+                self.address_in.addItems(self.settings["localities"])
+                if current_addr in self.settings["localities"]:
+                    self.address_in.setCurrentText(current_addr)
             self.apply_theme()
             if self.current_patient_id:
                 if self.settings.get("fold_by_default", True):
@@ -323,7 +322,8 @@ class VaxApp(QWidget):
         allergies = self.allergies_in.text().strip()
         email = self.email_in.text().strip()
         
-        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, self.settings["center_schedule"])
+        pneumo_mode = self.settings.get("pneumo_mode", "Old")
+        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, pneumo_mode, self.settings["center_schedule"])
         
         self.name_in.clear()
         self.date_in.clear()
@@ -368,7 +368,7 @@ class VaxApp(QWidget):
             title = f"Résultats de recherche ({len(results)} dossiers trouvés)"
             if is_date: title = f"Vaccinés le {parsed.strftime('%d/%m/%Y')} ({len(results)} dossiers)"
             
-            dialog = AllPatientsDialog(self, results, self.settings["secteurs"], engine=self.engine, title=title)
+            dialog = AllPatientsDialog(self, results, self.settings["localities"], engine=self.engine, title=title)
             if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_id:
                 self.search_input.setText(dialog.selected_id)
                 self.handle_search()
@@ -423,7 +423,7 @@ class VaxApp(QWidget):
         if not patients:
             QMessageBox.information(self, "Dossiers", "La base de données est actuellement vide.")
             return
-        dialog = AllPatientsDialog(self, patients, self.settings["secteurs"], engine=self.engine)
+        dialog = AllPatientsDialog(self, patients, self.settings["localities"], engine=self.engine)
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_id:
             self.search_input.setText(dialog.selected_id)
             self.handle_search()
@@ -472,7 +472,17 @@ class VaxApp(QWidget):
         if not self.current_patient_id: return
         
         widget = self.table.cellWidget(current_row, 2)
-        text = widget.text().strip().upper()
+        
+        # Extract DateLineEdit from container if applicable
+        if widget and hasattr(widget, 'layout') and widget.layout():
+            from PyQt6.QtWidgets import QLineEdit
+            for i in range(widget.layout().count()):
+                child = widget.layout().itemAt(i).widget()
+                if isinstance(child, QLineEdit):
+                    widget = child
+                    break
+                    
+        text = widget.text().strip().upper() if hasattr(widget, 'text') else ""
         needs_update = False
         selected_date = None
         status_to_save = "Done" 
@@ -582,8 +592,17 @@ class VaxApp(QWidget):
         if not needs_update:
             next_w = self.table.cellWidget(next_row, 2)
             if next_w:
+                if hasattr(next_w, 'layout') and next_w.layout():
+                    from PyQt6.QtWidgets import QLineEdit
+                    for i in range(next_w.layout().count()):
+                        child = next_w.layout().itemAt(i).widget()
+                        if isinstance(child, QLineEdit):
+                            next_w = child
+                            break
+                            
                 next_w.setFocus()
-                next_w.selectAll()
+                if hasattr(next_w, 'selectAll'):
+                    next_w.selectAll()
             return
 
         if status_to_save == "Rupture":
@@ -616,7 +635,7 @@ class VaxApp(QWidget):
         p_data = self.engine.get_patient(self.current_patient_id)
         
         if p_data:
-            dialog = EditPatientDialog(self, p_data, self.settings["secteurs"])
+            dialog = EditPatientDialog(self, p_data, self.settings["localities"])
             if dialog.exec():
                 new_name = dialog.name_in.text()
                 new_dob = dialog.parsed_dob
@@ -626,8 +645,9 @@ class VaxApp(QWidget):
                 new_phone = dialog.phone_in.text()
                 new_allergies = dialog.allergies_in.text()
                 new_email = dialog.email_in.text()
+                new_pneumo = dialog.pneumo_in.currentText()
                 
-                self.engine.update_patient(self.current_patient_id, new_name, new_dob, new_sexe, new_address, new_parent, new_phone, new_allergies, new_email, self.settings["center_schedule"])
+                self.engine.update_patient(self.current_patient_id, new_name, new_dob, new_sexe, new_address, new_parent, new_phone, new_allergies, new_email, new_pneumo, self.settings["center_schedule"])
                 self.search_input.setText(self.current_patient_id)
                 self.handle_search()
 

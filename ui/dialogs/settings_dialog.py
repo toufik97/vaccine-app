@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QComboBox, QLineEdit, QCheckBox, QPushButton, QTabWidget, QMessageBox
 from PyQt6.QtCore import Qt
+from ui.dialogs.vaccine_manager import VaccineManagerDialog
 
 class SettingsDialog(QDialog):
     def __init__(self, parent, current_settings):
@@ -44,7 +45,7 @@ class SettingsDialog(QDialog):
 
         layout_gen.addWidget(QLabel("<b>Vos Localités :</b>\n(Séparez par des virgules)"))
         self.sectors_input = QLineEdit()
-        self.sectors_input.setText(", ".join(current_settings.get("secteurs", [])))
+        self.sectors_input.setText(", ".join(current_settings.get("localities", [])))
         layout_gen.addWidget(self.sectors_input)
         layout_gen.addSpacing(10)
         
@@ -109,9 +110,9 @@ class SettingsDialog(QDialog):
         desc_lbl.setWordWrap(True)
         layout_admin.addWidget(desc_lbl)
         
-        btn_open = QPushButton("📝 Ouvrir le fichier protocols.json")
+        btn_open = QPushButton("💉 Ouvrir le Gestionnaire de Vaccins")
         btn_open.setStyleSheet("background-color: #34495e; color: white; padding: 8px; font-weight: bold;")
-        btn_open.clicked.connect(self.open_json_file)
+        btn_open.clicked.connect(self.open_vaccine_manager)
         layout_admin.addWidget(btn_open)
         
         btn_reload = QPushButton("🔄 Recharger les protocoles en mémoire")
@@ -164,35 +165,19 @@ class SettingsDialog(QDialog):
             "center_type": self.center_type_combo.currentText(),
             "dark_mode": self.theme_combo.currentText() == "Mode Sombre",
             "fold_by_default": self.fold_combo.currentText() == "Groupes pliés (Vue condensée)",
-            "secteurs": sects,
+            "localities": sects,
             "center_schedule": self.current_schedule,
             "pneumo_mode": "New" if self.pneumo_combo.currentIndex() == 1 else "Old",
             "allow_future_dates": self.future_dates_cb.isChecked()
         }
 
-    # --- NEW ADMIN METHODS ---
-    def open_json_file(self):
-        import os
-        import platform
-        filepath = 'protocols.json'
-        if not os.path.exists(filepath):
-            QMessageBox.warning(self, "Erreur", "Le fichier protocols.json n'existe pas encore.")
-            return
-        try:
-            if platform.system() == 'Windows':
-                os.startfile(filepath)
-            elif platform.system() == 'Darwin':
-                import subprocess
-                subprocess.call(('open', filepath))
-            else:
-                import subprocess
-                subprocess.call(('xdg-open', filepath))
-        except Exception as e:
-            QMessageBox.warning(self, "Erreur", f"Impossible d'ouvrir le fichier : {e}")
+    def open_vaccine_manager(self):
+        manager = VaccineManagerDialog(self)
+        manager.exec()
 
     def reload_protocols(self):
         try:
             self.parent().engine.load_protocols()
             QMessageBox.information(self, "Succès", "Protocoles rechargés avec succès !\nTous les nouveaux dossiers utiliseront ce calendrier.")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur Critique", f"Erreur lors du rechargement. Vérifiez la syntaxe de votre fichier JSON.\n\nDétail: {e}")
+            QMessageBox.critical(self, "Erreur Critique", f"Erreur lors du rechargement. Vérifiez la base de données.\n\nDétail: {e}")
