@@ -216,7 +216,12 @@ class PatientTableWidget(QTableWidget):
                 if vax_name == "Pneumo3_NewOnly":
                     display_name = "Pneumo3 (6 Mois)"
                 elif vax_name == "Pneumo_Final":
-                    display_name = "Pneumo3 (12 Mois)" if settings.get("pneumo_mode", "Old") == "Old" else "Pneumo4 (12 Mois)"
+                    # Re-check patient's actual mode in case global is different
+                    try:
+                        p_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
+                    except:
+                        p_mode = settings.get("pneumo_mode", "Old")
+                    display_name = "Pneumo3 (12 Mois)" if p_mode == "Old" else "Pneumo4 (12 Mois)"
                     
                 lbl_text = f"      ↳ {display_name}"
                 if obs: lbl_text += " ℹ️"
@@ -261,13 +266,21 @@ class PatientTableWidget(QTableWidget):
                     
                     pneumo_combo = QComboBox()
                     pneumo_combo.addItems(["Old", "New"])
-                    # Default to patient's choice
-                    patient_mode = settings.get("pneumo_mode", "Old")
-                    try:
-                        patient_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
-                    except:
-                        pass
-                    pneumo_combo.setCurrentText(patient_mode)
+                    
+                    # 1. First priority: Check what was saved in the DB observation text.
+                    mode_to_set = None
+                    if obs and "[Type: Old]" in obs: mode_to_set = "Old"
+                    elif obs and "[Type: New]" in obs: mode_to_set = "New"
+                    
+                    # 2. Second priority: Fall back to patient_mode setting.
+                    if not mode_to_set:
+                        mode_to_set = settings.get("pneumo_mode", "Old")
+                        try:
+                            mode_to_set = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
+                        except:
+                            pass
+                            
+                    pneumo_combo.setCurrentText(mode_to_set)
                     pneumo_combo.setFixedWidth(50)
                     pneumo_combo.setStyleSheet("font-size: 10px; padding: 2px;")
                     
@@ -277,12 +290,12 @@ class PatientTableWidget(QTableWidget):
                 else:
                     actual_widget_to_set = vax_widget
                 
-                if vax_name == "Pneumo3_NewOnly" and settings.get("pneumo_mode", "Old") == "Old":
+                if vax_name == "Pneumo3_NewOnly":
                     # Re-check patient's actual mode in case global is different
                     try:
                         p_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
                     except:
-                        p_mode = "Old"
+                        p_mode = settings.get("pneumo_mode", "Old")
                     
                     if p_mode == "Old":
                         due_vax_text = "Non requis 🚫"
@@ -301,22 +314,18 @@ class PatientTableWidget(QTableWidget):
                 
                 # The navigation callback needs a slight wrapper if pneumo_combo is present to pass observation
                 def make_nav_callback(m, v, st, gs, dob_s, combo):
-                    def callback(r, d, is_g=False):
+                    def callback(r, d, is_g=False, c=combo, mv=v, mm=m, mst=st):
                         # Construct observation from combo if present
-                        obs = f"[Type: {combo.currentText()}]" if combo and v.startswith("Pneumo") else ""
-                        # Store observation in engine temporarily or just emit a signal 
-                        # Actually, our handle_navigation signature doesn't take observation directly right now,
-                        # However, we can modify handle_navigation or just update the DB directly if the status becomes Done.
-                        # For now, let's pass a custom observation through given_str/tag or we need to update handle_navigation to accept it.
-                        self.main_app.handle_navigation(r, d, is_g, m, v, st, gs, dob_s)
+                        obs = f"[Type: {c.currentText()}]" if c and mv.startswith("Pneumo") else ""
+                        self.main_app.handle_navigation(r, d, is_g, mm, mv, mst, gs, dob_s)
                         
                         # Apply observation AFTER handle_navigation if it resulted in "Done"
                         try:
                             # Re-fetch the status to see if it changed to Done
                             re_records = self.main_app.engine.get_records(self.main_app.current_patient_id)
                             for rm, rv, rdue, rstat, rgiven, robs in re_records:
-                                if rm == m and rv == v and rstat in ["Done", "Externe"] and combo:
-                                    self.main_app.engine.update_vax_status(self.main_app.current_patient_id, rm, rv, rstat, rgiven, f"[Type: {combo.currentText()}]")
+                                if rm == mm and rv == mv and rstat in ["Done", "Externe"] and c:
+                                    self.main_app.engine.update_vax_status(self.main_app.current_patient_id, rm, rv, rstat, rgiven, f"[Type: {c.currentText()}]")
                         except:
                             pass
                     return callback
