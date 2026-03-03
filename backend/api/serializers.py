@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Setting, VaccineFamily, Milestone, VaccineDose
+from .models import Setting, VaccineFamily, Milestone, VaccineDose, Patient, PatientVaccine, Visit
 import json
 
 class SettingSerializer(serializers.ModelSerializer):
@@ -40,3 +40,21 @@ class VaccineFamilySerializer(serializers.ModelSerializer):
         # Nested serialization to emulate the structure of the original protocols.json
         doses = VaccineDose.objects.filter(family_id=obj.id_name)
         return VaccineDoseSerializer(doses, many=True).data
+
+class PatientVaccineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientVaccine
+        fields = '__all__'
+
+class VisitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Visit
+        fields = '__all__'
+
+class PatientSerializer(serializers.ModelSerializer):
+    vaccines = PatientVaccineSerializer(many=True, read_only=True)
+    visits = VisitSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Patient
+        fields = '__all__'

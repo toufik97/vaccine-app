@@ -2,8 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Setting, VaccineFamily, Milestone, VaccineDose
-from .serializers import SettingSerializer, VaccineFamilySerializer, MilestoneSerializer, VaccineDoseSerializer
+from .models import Setting, VaccineFamily, Milestone, VaccineDose, Patient, PatientVaccine, Visit
+from .serializers import SettingSerializer, VaccineFamilySerializer, MilestoneSerializer, VaccineDoseSerializer, PatientSerializer, PatientVaccineSerializer, VisitSerializer
 import json
 import uuid
 
@@ -22,6 +22,19 @@ class VaccineFamilyViewSet(viewsets.ModelViewSet):
 class VaccineDoseViewSet(viewsets.ModelViewSet):
     queryset = VaccineDose.objects.all()
     serializer_class = VaccineDoseSerializer
+
+class PatientViewSet(viewsets.ModelViewSet):
+    queryset = Patient.objects.all()
+    serializer_class = PatientSerializer
+    lookup_value_regex = r'[^.]+' # Allows slashes in primary key
+
+class PatientVaccineViewSet(viewsets.ModelViewSet):
+    queryset = PatientVaccine.objects.all()
+    serializer_class = PatientVaccineSerializer
+
+class VisitViewSet(viewsets.ModelViewSet):
+    queryset = Visit.objects.all()
+    serializer_class = VisitSerializer
 
 @api_view(['POST'])
 @transaction.atomic
@@ -71,3 +84,26 @@ def upload_protocols(request):
                 )
                 
     return Response({"status": "success"})
+
+
+@api_view(['POST'])
+@transaction.atomic
+def rename_vaccine(request):
+    old_name = request.data.get("old_name")
+    new_name = request.data.get("new_name")
+    if old_name and new_name:
+        PatientVaccine.objects.filter(vaccine_name=old_name).update(vaccine_name=new_name)
+        return Response({"status": "success", "message": f"Renamed {old_name} to {new_name}"})
+    return Response({"error": "Missing old_name or new_name"}, status=400)
+
+
+@api_view(['POST'])
+@transaction.atomic
+def delete_vaccine_dose(request):
+    vax_name = request.data.get("vax_name")
+    if vax_name:
+        # According to business rules, we only cascade delete vaccines that are STILL PENDING. 
+        # Done/Externe doses are preserved in the medical record cache.
+        PatientVaccine.objects.filter(vaccine_name=vax_name, status="Pending").delete()
+        return Response({"status": "success", "message": f"Deleted PENDING records for {vax_name}"})
+    return Response({"error": "Missing vax_name"}, status=400)

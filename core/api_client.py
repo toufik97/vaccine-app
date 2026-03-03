@@ -133,3 +133,56 @@ class ApiClient:
         except requests.RequestException as e:
             print(f"Failed to upload protocols: {e}")
             raise e
+
+    # --- PATIENTS & VISITS ---
+    def get_all_patients(self):
+        return self._get("patients/") or []
+
+    def get_patient(self, p_id):
+        return self._get(f"patients/{p_id}/")
+
+    def create_patient(self, data):
+        return self._post("patients/", data)
+
+    def update_patient(self, p_id, data):
+        return self._put(f"patients/{p_id}/", data)
+        
+    def patch_patient(self, p_id, data):
+        try:
+            response = requests.patch(f"{self.base_url}patients/{p_id}/", json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"API Error [PATCH patients/{p_id}/]: {e}\nResponse: {getattr(e.response, 'text', '')}")
+            raise e
+
+    def delete_patient(self, p_id):
+        return self._delete(f"patients/{p_id}/")
+
+    def create_patient_vaccine(self, data):
+        return self._post("patient-vaccines/", data)
+
+    def patch_patient_vaccine(self, vax_id, data):
+        try:
+            response = requests.patch(f"{self.base_url}patient-vaccines/{vax_id}/", json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"API Error [PATCH patient-vaccines/{vax_id}/]: {e}\nResponse: {getattr(e.response, 'text', '')}")
+            raise e
+
+    def delete_patient_vaccine(self, vax_id):
+        return self._delete(f"patient-vaccines/{vax_id}/")
+        
+    def create_visit(self, data):
+        return self._post("visits/", data)
+        
+    def delete_visit(self, visit_id):
+        return self._delete(f"visits/{visit_id}/")
+
+    # --- BULK PROTOCOL ACTIONS ---
+    def rename_vaccine(self, old_name, new_name):
+        return self._post("rename-vaccine/", {"old_name": old_name, "new_name": new_name})
+        
+    def delete_vaccine_dose(self, vax_name):
+        return self._post("delete-vaccine-dose/", {"vax_name": vax_name})

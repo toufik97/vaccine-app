@@ -58,3 +58,31 @@ class VaccineDose(models.Model):
 
     def __str__(self):
         return f"{self.id} ({self.milestone_name})"
+
+class Patient(models.Model):
+    id_label = models.CharField(max_length=100, primary_key=True)
+    name = models.CharField(max_length=200)
+    dob = models.DateField()
+    sexe = models.IntegerField() 
+    address = models.CharField(max_length=300, blank=True, null=True)
+    parent_name = models.CharField(max_length=200, blank=True, null=True)
+    phone = models.CharField(max_length=50, blank=True, null=True)
+    allergies = models.TextField(blank=True, null=True)
+    email = models.CharField(max_length=200, blank=True, null=True)
+    pneumo_mode = models.CharField(max_length=20, default='Old')
+
+class PatientVaccine(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='vaccines')
+    milestone_name = models.CharField(max_length=100)
+    vaccine_name = models.CharField(max_length=100)
+    due_date = models.DateField(blank=True, null=True)
+    status = models.CharField(max_length=50)
+    given_date = models.CharField(max_length=20, blank=True, null=True) # Could be "Inconnue" or date string
+    observation = models.TextField(blank=True, null=True)
+
+class Visit(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='visits')
+    visit_date = models.DateField()
+    weight = models.FloatField(blank=True, null=True)
+    height = models.FloatField(blank=True, null=True)
+    imc = models.FloatField(blank=True, null=True)

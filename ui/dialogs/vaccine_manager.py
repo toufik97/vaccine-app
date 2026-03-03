@@ -195,7 +195,7 @@ class VaccineManagerDialog(QDialog):
         try:
             main_app = self.parent().parent()
             if hasattr(main_app, 'engine'):
-                self.data = main_app.engine.db.get_all_vaccine_families_with_doses()
+                self.data = main_app.engine.api.get_vaccine_families_with_doses()
             else:
                 QMessageBox.warning(self, "Erreur", "Impossible de contacter la base de données (Engine introuvable).")
                 return
