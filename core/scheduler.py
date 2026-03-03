@@ -14,8 +14,45 @@ class Scheduler:
         if os.path.exists(protocol_file):
             with open(protocol_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                self.milestones = [(m[0], m[1], m[2]) for m in data.get("milestones", [])]
-                self.rules = data.get("rules", {})
+
+            # Rebuild the old self.milestones format: [(name, target_days, [vaccines...]), ...]
+            milestones_order = data.get("milestones_order", [])
+            vaccines = data.get("vaccines", [])
+
+            self.milestones = []
+            self.rules = {}
+
+            # First, group doses by milestone
+            milestone_dict = {}
+            for m in milestones_order:
+                milestone_dict[m["name"]] = {
+                    "target_days": m["target_days"],
+                    "doses": []
+                }
+
+            # Map vaccines into rules and milestones
+            for vax in vaccines:
+                for dose in vax.get("doses", []):
+                    dose_id = dose["id"]
+                    m_name = dose["milestone"]
+                    dose_rules = dose.get("rules", {})
+
+                    # Extract rules identically to the old format
+                    self.rules[dose_id] = dose_rules
+
+                    # Add dose to the milestone array
+                    if m_name in milestone_dict:
+                        milestone_dict[m_name]["doses"].append(dose_id)
+
+            # Build the final self.milestones array in the correct order
+            for m in milestones_order:
+                name = m["name"]
+                target = m["target_days"]
+                # In the old JSON, the order of vaccines in the array mattered for UI display.
+                # However, Python dicts maintain insertion order, and we essentially maintain
+                # the order they appear in the JSON "vaccines" section, which is generally what we want.
+                self.milestones.append((name, target, milestone_dict[name]["doses"]))
+
         else:
             self.milestones = []
             self.rules = {}

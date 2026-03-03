@@ -62,6 +62,25 @@ class EditPatientDialog(QDialog):
         layout.addWidget(QLabel("Allergies / Notes :"))
         self.allergies_in = QLineEdit(self.allergies)
         layout.addWidget(self.allergies_in)
+
+        layout.addSpacing(10)
+        layout.addWidget(QLabel("<b>PROTOCOLES SPÉCIFIQUES</b>"))
+        
+        self.pneumo_in = QComboBox()
+        self.pneumo_in.addItems(["Old", "New"])
+        # We need the current patient's pneumo mode. We should pass it via patient_data or engine.
+        # Since patient_data doesn't inherently include it in the generic fetch, we'll try to fetch or default
+        try:
+            current_mode = self.parent().engine.db.get_patient_pneumo_mode(self.p_id)
+        except Exception:
+            current_mode = "Old"
+        self.pneumo_in.setCurrentText(current_mode)
+        
+        h_pneumo = QHBoxLayout()
+        h_pneumo.addWidget(QLabel("Pneumocoque :"))
+        h_pneumo.addWidget(self.pneumo_in)
+        h_pneumo.addStretch()
+        layout.addLayout(h_pneumo)
         
         self.parsed_dob = None
         

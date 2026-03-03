@@ -18,3 +18,5 @@ features
 config.json
 *.zip
 *.pdf
+temp_exported.csv
+test_multi_export.xlsx

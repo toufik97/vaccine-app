@@ -248,23 +248,80 @@ class PatientTableWidget(QTableWidget):
                 vax_widget.setPlaceholderText("Date, T, N, E, R, M")
                 vax_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 
+                # Check if it's a pneumo dose that requires specific mode tracking
+                is_pneumo_dose = vax_name.startswith("Pneumo") and status not in ["Done", "Externe"]
+                pneumo_combo = None
+                
+                if is_pneumo_dose:
+                    from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox
+                    container_widget = QWidget()
+                    h_layout = QHBoxLayout(container_widget)
+                    h_layout.setContentsMargins(0, 0, 0, 0)
+                    h_layout.setSpacing(2)
+                    
+                    pneumo_combo = QComboBox()
+                    pneumo_combo.addItems(["Old", "New"])
+                    # Default to patient's choice
+                    patient_mode = settings.get("pneumo_mode", "Old")
+                    try:
+                        patient_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
+                    except:
+                        pass
+                    pneumo_combo.setCurrentText(patient_mode)
+                    pneumo_combo.setFixedWidth(50)
+                    pneumo_combo.setStyleSheet("font-size: 10px; padding: 2px;")
+                    
+                    h_layout.addWidget(vax_widget)
+                    h_layout.addWidget(pneumo_combo)
+                    actual_widget_to_set = container_widget
+                else:
+                    actual_widget_to_set = vax_widget
+                
                 if vax_name == "Pneumo3_NewOnly" and settings.get("pneumo_mode", "Old") == "Old":
-                    due_vax_text = "Non requis 🚫"
-                    vax_widget.setReadOnly(True)
-                    vax_widget.setEnabled(False)
-                    vax_widget.setPlaceholderText("-")
-                    status = "Pending"
-                    is_late = False
-                    is_today = False
+                    # Re-check patient's actual mode in case global is different
+                    try:
+                        p_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
+                    except:
+                        p_mode = "Old"
+                    
+                    if p_mode == "Old":
+                        due_vax_text = "Non requis 🚫"
+                        vax_widget.setReadOnly(True)
+                        vax_widget.setEnabled(False)
+                        vax_widget.setPlaceholderText("-")
+                        if pneumo_combo:
+                            pneumo_combo.hide()
+                        status = "Pending"
+                        is_late = False
+                        is_today = False
                     
                 due_vax = QTableWidgetItem(due_vax_text) 
                 due_vax.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 due_vax.setFlags(due_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 
-                vax_widget.navigationRequested.connect(
-                    lambda r, d, is_g=False, m=milestone, v=vax_name, st=status, gs=given_str, dob=dob_str: 
-                    self.main_app.handle_navigation(r, d, is_g, m, v, st, gs, dob)
-                )
+                # The navigation callback needs a slight wrapper if pneumo_combo is present to pass observation
+                def make_nav_callback(m, v, st, gs, dob_s, combo):
+                    def callback(r, d, is_g=False):
+                        # Construct observation from combo if present
+                        obs = f"[Type: {combo.currentText()}]" if combo and v.startswith("Pneumo") else ""
+                        # Store observation in engine temporarily or just emit a signal 
+                        # Actually, our handle_navigation signature doesn't take observation directly right now,
+                        # However, we can modify handle_navigation or just update the DB directly if the status becomes Done.
+                        # For now, let's pass a custom observation through given_str/tag or we need to update handle_navigation to accept it.
+                        self.main_app.handle_navigation(r, d, is_g, m, v, st, gs, dob_s)
+                        
+                        # Apply observation AFTER handle_navigation if it resulted in "Done"
+                        try:
+                            # Re-fetch the status to see if it changed to Done
+                            re_records = self.main_app.engine.get_records(self.main_app.current_patient_id)
+                            for rm, rv, rdue, rstat, rgiven, robs in re_records:
+                                if rm == m and rv == v and rstat in ["Done", "Externe"] and combo:
+                                    self.main_app.engine.update_vax_status(self.main_app.current_patient_id, rm, rv, rstat, rgiven, f"[Type: {combo.currentText()}]")
+                        except:
+                            pass
+                    return callback
+
+                vax_widget.navigationRequested.connect(make_nav_callback(milestone, vax_name, status, given_str, dob_str, pneumo_combo))
 
                 if status in ["Done", "Externe"] and given_str:
                     if given_str == "Inconnue":
@@ -324,7 +381,7 @@ class PatientTableWidget(QTableWidget):
 
                 self.setItem(row_idx, 0, lbl_vax)
                 self.setItem(row_idx, 1, due_vax)
-                self.setCellWidget(row_idx, 2, vax_widget)
+                self.setCellWidget(row_idx, 2, actual_widget_to_set)
                 
                 self.setRowHeight(row_idx, 38)
                 self.setRowHidden(row_idx, is_collapsed)
@@ -335,7 +392,15 @@ class PatientTableWidget(QTableWidget):
 
         if pending_focus_row is not None:
             widget = self.cellWidget(pending_focus_row, 2)
-            if widget:
+            # If it's a layout widget, the focus needs to go to the DateLineEdit inside it
+            if widget and hasattr(widget, 'layout') and widget.layout():
+                for i in range(widget.layout().count()):
+                    child = widget.layout().itemAt(i).widget()
+                    if isinstance(child, DateLineEdit):
+                        child.setFocus()
+                        child.selectAll()
+                        break
+            elif widget:
                 widget.setFocus()
                 widget.selectAll()
 

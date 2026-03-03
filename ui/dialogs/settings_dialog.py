@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QComboBox, QLineEdit, QCheckBox, QPushButton, QTabWidget, QMessageBox
 from PyQt6.QtCore import Qt
+from ui.dialogs.vaccine_manager import VaccineManagerDialog
 
 class SettingsDialog(QDialog):
     def __init__(self, parent, current_settings):
@@ -109,9 +110,9 @@ class SettingsDialog(QDialog):
         desc_lbl.setWordWrap(True)
         layout_admin.addWidget(desc_lbl)
         
-        btn_open = QPushButton("📝 Ouvrir le fichier protocols.json")
+        btn_open = QPushButton("💉 Ouvrir le Gestionnaire de Vaccins")
         btn_open.setStyleSheet("background-color: #34495e; color: white; padding: 8px; font-weight: bold;")
-        btn_open.clicked.connect(self.open_json_file)
+        btn_open.clicked.connect(self.open_vaccine_manager)
         layout_admin.addWidget(btn_open)
         
         btn_reload = QPushButton("🔄 Recharger les protocoles en mémoire")
@@ -170,25 +171,9 @@ class SettingsDialog(QDialog):
             "allow_future_dates": self.future_dates_cb.isChecked()
         }
 
-    # --- NEW ADMIN METHODS ---
-    def open_json_file(self):
-        import os
-        import platform
-        filepath = 'protocols.json'
-        if not os.path.exists(filepath):
-            QMessageBox.warning(self, "Erreur", "Le fichier protocols.json n'existe pas encore.")
-            return
-        try:
-            if platform.system() == 'Windows':
-                os.startfile(filepath)
-            elif platform.system() == 'Darwin':
-                import subprocess
-                subprocess.call(('open', filepath))
-            else:
-                import subprocess
-                subprocess.call(('xdg-open', filepath))
-        except Exception as e:
-            QMessageBox.warning(self, "Erreur", f"Impossible d'ouvrir le fichier : {e}")
+    def open_vaccine_manager(self):
+        manager = VaccineManagerDialog(self)
+        manager.exec()
 
     def reload_protocols(self):
         try:

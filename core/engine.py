@@ -2,7 +2,7 @@ from db.database import Database
 from core.who_zscore import WhoZScoreCalculator
 from core.scheduler import Scheduler
 from datetime import datetime, timedelta
-from core.enums import PneumoProtocol
+from core.enums import PneumoProtocol, VaccineStatus
 
 class VaxEngine:
     """
@@ -58,7 +58,33 @@ class VaxEngine:
         if not dob_str:
             return
             
-        pneumo_mode = self.config.get("pneumo_mode", PneumoProtocol.OLD.value)
+        pneumo_mode = self.db.get_patient_pneumo_mode(p_id)
+        
+        # Sync DB records with expected vaccines for this pneumo_mode
+        expected_vaxes = []
+        for milestone, target, vaxes in self.scheduler.milestones:
+            for vax in vaxes:
+                if vax == "Pneumo3_NewOnly" and pneumo_mode == PneumoProtocol.OLD.value:
+                    continue
+                expected_vaxes.append((milestone, vax))
+                
+        existing_vaxes = set(records_dict.keys())
+        expected_vax_names = {v[1] for v in expected_vaxes}
+        
+        # Insert missing (e.g., Pneumo3_NewOnly if switched to New)
+        for milestone, vax in expected_vaxes:
+            if vax not in existing_vaxes:
+                self.db.add_patient_vaccine_record(p_id, milestone, vax)
+                records_dict[vax] = {"status": VaccineStatus.PENDING.value, "date_given": None, "due_date": "", "observations": ""}
+                
+        # Delete unused PENDING (e.g. Pneumo3_NewOnly if switched to Old)
+        for vax, data in records_dict.items():
+            if vax not in expected_vax_names and data["status"] == VaccineStatus.PENDING.value:
+                self.db.delete_patient_vaccine_record_if_pending(p_id, vax)
+                
+        # Refresh records after sync
+        dob_str, records_dict = self.db.get_patient_dob_and_records(p_id)
+        
         updates = self.scheduler.calculate_updates(dob_str, records_dict, center_schedule, pneumo_mode)
         self.db.update_records_due_dates(p_id, updates)
 
@@ -66,7 +92,7 @@ class VaxEngine:
         for p in self.db.get_all_patients():
             self.recalculate_schedule(p[0], center_schedule)
 
-    def register_child(self, name, dob_obj, sexe, address, parent_name="", phone="", allergies="", email="", center_schedule={}):
+    def register_child(self, name, dob_obj, sexe, address, parent_name="", phone="", allergies="", email="", pneumo_mode="Old", center_schedule={}):
         new_id = self.db.generate_id()
         dob_str = dob_obj.strftime("%Y-%m-%d")
         
@@ -76,7 +102,7 @@ class VaxEngine:
             for vax in vaccines:
                 initial_records.append((milestone, vax, due))
                 
-        self.db.register_child(new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, initial_records)
+        self.db.register_child(new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode, initial_records)
         self.recalculate_schedule(new_id, center_schedule)
         return new_id
 
@@ -89,8 +115,8 @@ class VaxEngine:
     def get_records(self, p_id):
         return self.db.get_records(p_id)
 
-    def update_vax_status(self, p_id, milestone, vax_name, status, date_given):
-        self.db.update_vax_status(p_id, milestone, vax_name, status, date_given)
+    def update_vax_status(self, p_id, milestone, vax_name, status, date_given, observation=""):
+        self.db.update_vax_status(p_id, milestone, vax_name, status, date_given, observation)
 
     def update_milestone_status(self, p_id, milestone, status, date_given):
         pneumo_mode = self.config.get("pneumo_mode", PneumoProtocol.OLD.value)
@@ -124,8 +150,15 @@ class VaxEngine:
     def validate_vaccine_date(self, p_id, vax_name, input_date):
         dob_str, records_dict = self.db.get_patient_dob_and_records(p_id)
         if not dob_str: return None
-        pneumo_mode = self.config.get("pneumo_mode", PneumoProtocol.OLD.value)
+        # Use patient's pneumo mode instead of global
+        pneumo_mode = self.db.get_patient_pneumo_mode(p_id) 
         return self.scheduler.validate_vaccine_input(dob_str, records_dict, vax_name, pneumo_mode, input_date)
+
+    def rename_vaccine_in_db(self, old_vax_name, new_vax_name):
+        self.db.rename_vaccine(old_vax_name, new_vax_name)
+
+    def delete_vaccine_dose_in_db(self, vax_name):
+        self.db.delete_vaccine_dose(vax_name)
 
     def get_patient(self, p_id):
         return self.db.get_patient(p_id)
@@ -133,9 +166,9 @@ class VaxEngine:
     def get_all_patients(self):
         return self.db.get_all_patients()
 
-    def update_patient(self, p_id, name, dob_obj, sexe, address, parent_name, phone, allergies, email, center_schedule={}):
+    def update_patient(self, p_id, name, dob_obj, sexe, address, parent_name, phone, allergies, email, pneumo_mode, center_schedule={}):
         dob_str = dob_obj.strftime("%Y-%m-%d")
-        self.db.update_patient(p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email)
+        self.db.update_patient(p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode)
         self.recalculate_schedule(p_id, center_schedule)
 
     def add_visit(self, p_id, date_str, weight, height, imc):

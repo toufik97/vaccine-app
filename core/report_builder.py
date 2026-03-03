@@ -133,6 +133,22 @@ class ReportBuilder:
         ]
 
         expected_vaxes = [t for t in table_structure if not t.get("is_header")]
+        
+        # Inject custom/archived vaccines dynamically
+        known_db_names = {t["db_name"] for t in expected_vaxes}
+        custom_vaxes = set()
+        for rec in stats_data:
+            mapped_name = ReportBuilder._map_vax_name(rec)
+            if mapped_name not in known_db_names:
+                custom_vaxes.add(mapped_name)
+                
+        if custom_vaxes:
+            table_structure.append({"label": "Autres Vaccins (Archives)", "is_header": True})
+            for cv in sorted(list(custom_vaxes)):
+                new_entry = {"label": cv, "db_name": cv, "has_0_11": True, "has_12_59": True, "has_5y": True}
+                table_structure.append(new_entry)
+                expected_vaxes.append(new_entry)
+
         processed = ReportBuilder._process_data(stats_data, expected_vaxes)
         
         # Subtitle logic
@@ -291,7 +307,12 @@ class ReportBuilder:
             mapped_name = ReportBuilder._map_vax_name(record)
             day = int(record["date_given"][-2:]) # "2024-03-15" -> 15
             
-            if mapped_name in grid and 1 <= day <= num_days:
+            # If mapped_name isn't in grid, it's an archived/custom vaccine. Add it dynamically.
+            if mapped_name not in grid:
+                vax_rows.append((mapped_name, mapped_name))
+                grid[mapped_name] = {d: 0 for d in range(1, num_days + 1)}
+            
+            if 1 <= day <= num_days:
                 grid[mapped_name][day] += 1
                 day_totals[day] += 1
                 
@@ -477,6 +498,21 @@ class ReportBuilder:
         ]
         
         expected_vaxes = [t for t in table_structure if not t.get("is_header")]
+        # Inject custom/archived vaccines dynamically
+        known_db_names = {t["db_name"] for t in expected_vaxes}
+        custom_vaxes = set()
+        for rec in stats_data:
+            mapped_name = ReportBuilder._map_vax_name(rec)
+            if mapped_name not in known_db_names:
+                custom_vaxes.add(mapped_name)
+                
+        if custom_vaxes:
+            table_structure.append({"label": "Autres Vaccins (Archives)", "is_header": True})
+            for cv in sorted(list(custom_vaxes)):
+                new_entry = {"label": cv, "db_name": cv, "has_0_11": True, "has_12_59": True, "has_5y": True}
+                table_structure.append(new_entry)
+                expected_vaxes.append(new_entry)
+                
         processed = ReportBuilder._process_data(stats_data, expected_vaxes)
         
         row_idx = 6
@@ -573,7 +609,12 @@ class ReportBuilder:
         for record in stats_data:
             mapped_name = ReportBuilder._map_vax_name(record)
             day = int(record["date_given"][-2:])
-            if mapped_name in grid and 1 <= day <= num_days:
+            
+            if mapped_name not in grid:
+                vax_rows.append((mapped_name, mapped_name))
+                grid[mapped_name] = {d: 0 for d in range(1, num_days + 1)}
+                
+            if 1 <= day <= num_days:
                 grid[mapped_name][day] += 1
                 day_totals[day] += 1
                 

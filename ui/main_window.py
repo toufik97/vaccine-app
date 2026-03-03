@@ -144,7 +144,7 @@ class VaxApp(QWidget):
         self.allergies_in = QLineEdit()
         self.allergies_in.setPlaceholderText("Allergies / Notes médicales")
         left_panel.addWidget(self.allergies_in)
-        
+
         save_btn = QPushButton("Enregistrer Nouveau")
         save_btn.setObjectName("saveBtn")
         save_btn.clicked.connect(self.handle_save)
@@ -323,7 +323,8 @@ class VaxApp(QWidget):
         allergies = self.allergies_in.text().strip()
         email = self.email_in.text().strip()
         
-        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, self.settings["center_schedule"])
+        pneumo_mode = self.settings.get("pneumo_mode", "Old")
+        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, pneumo_mode, self.settings["center_schedule"])
         
         self.name_in.clear()
         self.date_in.clear()
@@ -472,7 +473,17 @@ class VaxApp(QWidget):
         if not self.current_patient_id: return
         
         widget = self.table.cellWidget(current_row, 2)
-        text = widget.text().strip().upper()
+        
+        # Extract DateLineEdit from container if applicable
+        if widget and hasattr(widget, 'layout') and widget.layout():
+            from PyQt6.QtWidgets import QLineEdit
+            for i in range(widget.layout().count()):
+                child = widget.layout().itemAt(i).widget()
+                if isinstance(child, QLineEdit):
+                    widget = child
+                    break
+                    
+        text = widget.text().strip().upper() if hasattr(widget, 'text') else ""
         needs_update = False
         selected_date = None
         status_to_save = "Done" 
@@ -582,8 +593,17 @@ class VaxApp(QWidget):
         if not needs_update:
             next_w = self.table.cellWidget(next_row, 2)
             if next_w:
+                if hasattr(next_w, 'layout') and next_w.layout():
+                    from PyQt6.QtWidgets import QLineEdit
+                    for i in range(next_w.layout().count()):
+                        child = next_w.layout().itemAt(i).widget()
+                        if isinstance(child, QLineEdit):
+                            next_w = child
+                            break
+                            
                 next_w.setFocus()
-                next_w.selectAll()
+                if hasattr(next_w, 'selectAll'):
+                    next_w.selectAll()
             return
 
         if status_to_save == "Rupture":
@@ -626,8 +646,9 @@ class VaxApp(QWidget):
                 new_phone = dialog.phone_in.text()
                 new_allergies = dialog.allergies_in.text()
                 new_email = dialog.email_in.text()
+                new_pneumo = dialog.pneumo_in.currentText()
                 
-                self.engine.update_patient(self.current_patient_id, new_name, new_dob, new_sexe, new_address, new_parent, new_phone, new_allergies, new_email, self.settings["center_schedule"])
+                self.engine.update_patient(self.current_patient_id, new_name, new_dob, new_sexe, new_address, new_parent, new_phone, new_allergies, new_email, new_pneumo, self.settings["center_schedule"])
                 self.search_input.setText(self.current_patient_id)
                 self.handle_search()
 

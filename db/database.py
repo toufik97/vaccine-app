@@ -45,6 +45,8 @@ class Database:
                 cursor.execute("ALTER TABLE patients ADD COLUMN allergies TEXT DEFAULT ''")
             if 'email' not in columns_patients:
                 cursor.execute("ALTER TABLE patients ADD COLUMN email TEXT DEFAULT ''")
+            if 'pneumo_mode' not in columns_patients:
+                cursor.execute("ALTER TABLE patients ADD COLUMN pneumo_mode TEXT DEFAULT 'Old'")
                 
             cursor.execute("SELECT id_label, dob FROM patients")
             patients = cursor.fetchall()
@@ -65,14 +67,14 @@ class Database:
             ids = [int(row[0].split('/')[0]) for row in cursor.fetchall()]
             return f"{max(ids) + 1 if ids else 1}/{year}"
 
-    def register_child(self, new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, initial_records):
+    def register_child(self, new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode, initial_records):
         if sexe not in [Gender.MALE.value, Gender.FEMALE.value]:
             raise ValueError(f"Sexe invalide: '{sexe}'. Doit être '{Gender.MALE.value}' ou '{Gender.FEMALE.value}'.")
             
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO patients (id_label, name, dob, sexe, address, parent_name, phone, allergies, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                           (new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email))
+            cursor.execute("INSERT INTO patients (id_label, name, dob, sexe, address, parent_name, phone, allergies, email, pneumo_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                           (new_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode))
             
             for milestone, vax, due in initial_records:
                 cursor.execute("INSERT INTO records (patient_id, milestone, vax_name, due_date, status, date_given, observations) VALUES (?, ?, ?, ?, ?, ?, ?)", 
@@ -87,19 +89,43 @@ class Database:
                                (new_due, p_id, vax_name))
             conn.commit()
 
+    def add_patient_vaccine_record(self, p_id, milestone, vax_name):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO records (patient_id, milestone, vax_name, due_date, status, date_given, observations) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                           (p_id, milestone, vax_name, "", VaccineStatus.PENDING.value, None, ""))
+            conn.commit()
+
+    def delete_patient_vaccine_record_if_pending(self, p_id, vax_name):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM records WHERE patient_id = ? AND vax_name = ? AND status = ?", 
+                           (p_id, vax_name, VaccineStatus.PENDING.value))
+            conn.commit()
+
     def get_patient_dob_and_records(self, p_id):
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT dob FROM patients WHERE id_label = ?", (p_id,))
+            cursor.execute("SELECT dob, pneumo_mode FROM patients WHERE id_label = ?", (p_id,))
             row = cursor.fetchone()
             if not row:
                 return None, None
             dob_str = row[0]
+            # Since existing callers only expect 2 elements, we'll stuff pneumo_mode into records dict for backward-compat or change the signature.
+            # Changing signature is better but requires updating all callers. Let's return 3 elements: dob, records, pneumo_mode
+            # Actually, existing code `dob_str, records_dict = self.db.get_patient_dob_and_records(p_id)` unpacks 2.
+            # Let's keep returning 2 and add a separate `get_patient_pneumo_mode(p_id)` method to avoid breaking every caller.
             
-            cursor.execute("SELECT vax_name, status, date_given, due_date FROM records WHERE patient_id = ?", (p_id,))
-            records = {r[0]: {"status": r[1], "date_given": r[2], "due_date": r[3]} for r in cursor.fetchall()}
+            cursor.execute("SELECT vax_name, status, date_given, due_date, observations FROM records WHERE patient_id = ?", (p_id,))
+            records = {r[0]: {"status": r[1], "date_given": r[2], "due_date": r[3], "observations": r[4]} for r in cursor.fetchall()}
             return dob_str, records
-        return dob_str, records
+            
+    def get_patient_pneumo_mode(self, p_id):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT pneumo_mode FROM patients WHERE id_label = ?", (p_id,))
+            row = cursor.fetchone()
+            return row[0] if row else "Old"
 
     def search_patients(self, query):
         with self.get_connection() as conn:
@@ -129,11 +155,15 @@ class Database:
             res = cursor.fetchall()
             return res
 
-    def update_vax_status(self, p_id, milestone, vax_name, status, date_given):
+    def update_vax_status(self, p_id, milestone, vax_name, status, date_given, observation=""):
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE records SET status = ?, date_given = ? WHERE patient_id = ? AND milestone = ? AND vax_name = ?", 
-                           (status, date_given, p_id, milestone, vax_name))
+            if observation:
+                cursor.execute("UPDATE records SET status = ?, date_given = ?, observations = ? WHERE patient_id = ? AND milestone = ? AND vax_name = ?", 
+                               (status, date_given, observation, p_id, milestone, vax_name))
+            else:
+                cursor.execute("UPDATE records SET status = ?, date_given = ? WHERE patient_id = ? AND milestone = ? AND vax_name = ?", 
+                               (status, date_given, p_id, milestone, vax_name))
             conn.commit()
 
     def update_milestone_status(self, p_id, milestone, status, date_given):
@@ -215,6 +245,23 @@ class Database:
                            (VaccineStatus.PENDING.value, p_id, milestone))
             conn.commit()
 
+    def rename_vaccine(self, old_vax_name, new_vax_name):
+        """ Used when an admin renames a dose explicitly in the Vaccine Manager to preserve history. """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE records SET vax_name = ? WHERE vax_name = ?", (new_vax_name, old_vax_name))
+            conn.commit()
+
+    def delete_vaccine_dose(self, vax_name):
+        """ 
+        When a dose is deleted from protocols, we delete all PENDING records for it to clean up the schedule. 
+        We DO NOT delete DONE, EXTERNE, RUPTURE, or MALADIE records so history is preserved.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM records WHERE vax_name = ? AND status = ?", (vax_name, VaccineStatus.PENDING.value))
+            conn.commit()
+
     def get_patient(self, p_id):
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -229,14 +276,14 @@ class Database:
             res = cursor.fetchall()
             return res
 
-    def update_patient(self, p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email):
+    def update_patient(self, p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode):
         if sexe not in [Gender.MALE.value, Gender.FEMALE.value]:
             raise ValueError(f"Sexe invalide: '{sexe}'. Doit être '{Gender.MALE.value}' ou '{Gender.FEMALE.value}'.")
             
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE patients SET name = ?, dob = ?, sexe = ?, address = ?, parent_name = ?, phone = ?, allergies = ?, email = ? WHERE id_label = ?", 
-                           (name, dob_str, sexe, address, parent_name, phone, allergies, email, p_id))
+            cursor.execute("UPDATE patients SET name = ?, dob = ?, sexe = ?, address = ?, parent_name = ?, phone = ?, allergies = ?, email = ?, pneumo_mode = ? WHERE id_label = ?", 
+                           (name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode, p_id))
             conn.commit()
 
     def add_visit(self, p_id, date_str, weight, height, imc):
