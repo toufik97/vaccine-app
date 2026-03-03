@@ -41,6 +41,9 @@ def upload_protocols(request):
         
         for dose in family.get("doses", []):
             base_id = dose.get("id", "dose")
+            if base_id.endswith("_Old"): base_id = base_id[:-4]
+            if base_id.endswith("_New"): base_id = base_id[:-4]
+            
             milestone = dose["milestone"]
             d_id = f"{f_id}_{base_id}_{milestone}_{str(uuid.uuid4())[:8]}"
             rules = dose.get("rules", {})

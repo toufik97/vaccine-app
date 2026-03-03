@@ -93,7 +93,7 @@ class ApiClient:
             }
             
             # Reconstruct legacy dose dictionaries
-            doses = []
+            dose_map = {}
             for d in family.get("doses", []):
                 rules = {}
                 min_age = d.get("min_age_days", 0)
@@ -104,29 +104,20 @@ class ApiClient:
                 if adv: rules.update(adv)
                 
                 base_id = d["id"]
+                proto = d.get("pneumo_protocol", "All")
+                
                 if base_id.endswith("_Old"): base_id = base_id[:-4]
                 elif base_id.endswith("_New"): base_id = base_id[:-4]
                 
-                dose_dict = {"id": base_id, "milestone": d["milestone_name"]}
-                proto = d.get("pneumo_protocol", "All")
+                if base_id not in dose_map:
+                    dose_map[base_id] = {"id": base_id, "milestone": d["milestone_name"], "rules": {}}
                 
                 if proto in ["Old", "New"]:
-                    dose_dict["rules"] = {proto: rules}
+                    dose_map[base_id]["rules"][proto] = rules
                 else:
-                    dose_dict["rules"] = rules
-                doses.append(dose_dict)
-                
-            # Merge dual-protocol rows into a single dictionary entry for the UI
-            merged_doses = {}
-            for d in doses:
-                d_id = d["id"]
-                if d_id not in merged_doses:
-                    merged_doses[d_id] = d
-                else:
-                    if "Old" in d["rules"] or "New" in d["rules"]:
-                        merged_doses[d_id]["rules"].update(d["rules"])
+                    dose_map[base_id]["rules"].update(rules)
             
-            f_dict["doses"] = list(merged_doses.values())
+            f_dict["doses"] = list(dose_map.values())
             vaccines.append(f_dict)
             
         return {
