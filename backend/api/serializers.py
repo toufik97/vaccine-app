@@ -19,7 +19,9 @@ class VaccineDoseSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = VaccineDose
-        fields = ['id', 'family_id', 'milestone_name', 'pneumo_protocol', 'min_age_days', 'offset_days', 'advanced_rules']
+        fields = ['id', 'family', 'milestone', 'pneumo_protocol', 'min_age_days', 
+                  'offset_days', 'administration_route', 'default_injection_site', 
+                  'vial_lifespan_days', 'advanced_rules']
 
     def get_advanced_rules(self, obj):
         if obj.advanced_rules_json:
@@ -30,16 +32,11 @@ class VaccineDoseSerializer(serializers.ModelSerializer):
         return {}
 
 class VaccineFamilySerializer(serializers.ModelSerializer):
-    doses = serializers.SerializerMethodField()
+    doses = VaccineDoseSerializer(many=True, read_only=True)
 
     class Meta:
         model = VaccineFamily
-        fields = ['id_name', 'display_name', 'description', 'doses']
-
-    def get_doses(self, obj):
-        # Nested serialization to emulate the structure of the original protocols.json
-        doses = VaccineDose.objects.filter(family_id=obj.id_name)
-        return VaccineDoseSerializer(doses, many=True).data
+        fields = ['id_name', 'display_name', 'description', 'linked_antigen_family', 'doses']
 
 class PatientVaccineSerializer(serializers.ModelSerializer):
     class Meta:

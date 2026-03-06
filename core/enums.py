@@ -31,3 +31,18 @@ class Gender(Enum):
         elif value == cls.FEMALE.value:
             return "Féminin"
         return value
+
+class InjectionSite(Enum):
+    LEFT_THIGH_ANTERO = "Cuisse Gauche (Antérolatérale)"
+    RIGHT_THIGH_ANTERO = "Cuisse Droite (Antérolatérale)"
+    LEFT_DELTOID_SC = "Deltoïde Gauche (Sous-cutanée)"
+    RIGHT_DELTOID_SC = "Deltoïde Droit (Sous-cutanée)"
+    DELTOID = "Deltoïde (IM)"
+    ORAL = "Oral"
+    INTRADERMAL_LEFT_ARM = "Intradermique (Bras Gauche)"
+
+class VaccineType(Enum):
+    LIVE_ATTENUATED = "Vivant Atténué"
+    INACTIVATED = "Inactivé"
+    TOXOID = "Anatoxine"
+    SUBUNIT = "Sous-unité/Conjugué"

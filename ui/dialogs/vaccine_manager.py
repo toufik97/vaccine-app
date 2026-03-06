@@ -3,7 +3,8 @@ import os
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, 
                              QPushButton, QListWidget, QListWidgetItem, QLineEdit, 
                              QTextEdit, QSplitter, QTreeWidget, QTreeWidgetItem,
-                             QMessageBox, QInputDialog, QComboBox, QSpinBox)
+                             QMessageBox, QInputDialog, QComboBox, QSpinBox, QCheckBox,
+                             QTableWidget, QTableWidgetItem, QHeaderView)
 from PyQt6.QtCore import Qt
 
 class DoseFormDialog(QDialog):
@@ -43,12 +44,79 @@ class DoseFormDialog(QDialog):
         self.offset_input.setValue(rules.get("offset_from_milestone_days", 0))
         layout.addWidget(self.offset_input)
         
-        layout.addWidget(QLabel("Règles avancées (JSON: dependencies, etc.) :"))
-        self.rules_json_input = QTextEdit()
-        adv_rules = {k: v for k, v in rules.items() if k not in ["min_age_days", "offset_from_milestone_days"]}
-        self.rules_json_input.setText(json.dumps(adv_rules, indent=2) if adv_rules else "")
-        self.rules_json_input.setMaximumHeight(80)
-        layout.addWidget(self.rules_json_input)
+        # New Admin Parameters
+        layout.addWidget(QLabel("Voie d'administration (ex: IM, SC, Oral) :"))
+        self.route_input = QComboBox()
+        self.route_input.addItems(["IM", "SC", "ID", "Oral", ""])
+        self.route_input.setCurrentText(rules.get("administration_route", ""))
+        layout.addWidget(self.route_input)
+
+        layout.addWidget(QLabel("Site d'injection par défaut :"))
+        self.site_input = QComboBox()
+        self.site_input.addItems(["Cuisse Droite (Antérolatérale)", "Cuisse Gauche (Antérolatérale)", "Deltoïde (IM)", "Deltoïde Gauche (Sous-cutanée)", "Intradermique (Bras Gauche)", "Oral", ""])
+        self.site_input.setCurrentText(rules.get("default_injection_site", ""))
+        layout.addWidget(self.site_input)
+
+        layout.addWidget(QLabel("Durée de vie du flacon (jours) [0 = dose unique] :"))
+        self.lifespan_input = QSpinBox()
+        self.lifespan_input.setRange(0, 365)
+        self.lifespan_input.setValue(rules.get("vial_lifespan_days", 0))
+        layout.addWidget(self.lifespan_input)
+
+        # Advanced Rules Explicit Fields
+        adv_rules = {k: v for k, v in rules.items() if k not in ["min_age_days", "offset_from_milestone_days", "administration_route", "default_injection_site", "vial_lifespan_days"]}
+
+        layout.addWidget(QLabel("<b>Règles Avancées (Options Optionnelles)</b>"))
+        
+        # is_live
+        self.is_live_cb = QCheckBox("Vaccin Vivant Atténué")
+        self.is_live_cb.setChecked(adv_rules.get("is_live", False))
+        self.is_live_cb.setToolTip("Cochez si le vaccin est vivant (ex: RR, VPO, BCG, Amarile). Active la règle des 28 jours avec d'autres vaccins vivants.")
+        layout.addWidget(self.is_live_cb)
+        
+        # live_conflict_exception
+        self.live_conflict_exc_cb = QCheckBox("Exception au Conflit Vivant (ex: VPO)")
+        self.live_conflict_exc_cb.setChecked(adv_rules.get("live_conflict_exception", False))
+        self.live_conflict_exc_cb.setToolTip("Cochez si le vaccin est vivant mais peut être administré sans délai de 28 jours après un autre vaccin vivant.")
+        layout.addWidget(self.live_conflict_exc_cb)
+
+        # dependencies
+        layout.addWidget(QLabel("Dépendances (Format: VaxA:30, VaxB:60) :"))
+        self.dependencies_input = QLineEdit()
+        self.dependencies_input.setToolTip("Vaccins requis en amont. Format: 'NomVaccin:Jours'.\nExemple: 'Penta1:28' signifie 'Doit être donné au moins 28 jours après Penta1'.\nSéparez par des virgules pour plusieurs dépendances.")
+        deps_str = ", ".join([f"{d['vaccine']}:{d['min_interval_days']}" for d in adv_rules.get("dependencies", [])])
+        self.dependencies_input.setText(deps_str)
+        layout.addWidget(self.dependencies_input)
+
+        # conflicts
+        layout.addWidget(QLabel("Conflits PNI (Format: VaxA,VaxB:28) :"))
+        self.conflicts_input = QLineEdit()
+        self.conflicts_input.setToolTip("Vaccins qui ne peuvent pas être donnés en même temps ou nécessitent un intervalle.\nFormat: 'VaxConf1,VaxConf2:JoursDIntervalle'.\nExemple: 'RR,Amarile:28'")
+        conflicts_str = "; ".join([f"{','.join(c['vaccines'])}:{c['min_interval_days']}" for c in adv_rules.get("conflicts", [])])
+        self.conflicts_input.setText(conflicts_str)
+        layout.addWidget(self.conflicts_input)
+
+        # offset_reference_vaccines
+        layout.addWidget(QLabel("Vaccins de Référence pour le Décalage :"))
+        self.offset_ref_input = QLineEdit()
+        self.offset_ref_input.setToolTip("Si un décalage (offset) est défini en haut, indiquez après quels vaccins s'applique le décalage.\nLaissez vide pour utiliser tous les autres vaccins du groupe. Séparez par des virgules.\nExemple: 'Penta3, VPI'")
+        ref_vaxes = adv_rules.get("offset_reference_vaccines", [])
+        self.offset_ref_input.setText(", ".join(ref_vaxes))
+        layout.addWidget(self.offset_ref_input)
+
+        # rupture_fallback_offset
+        self.rupture_fallback_cb = QCheckBox("Utiliser le Décalage comme Exception de Rupture")
+        self.rupture_fallback_cb.setChecked(adv_rules.get("rupture_fallback_offset", False))
+        self.rupture_fallback_cb.setToolTip("Si coché, le décalage sera ignoré et le 'Âge Minimum de Secours' sera utilisé si les vaccins de référence sont marqués 'En Rupture'.")
+        layout.addWidget(self.rupture_fallback_cb)
+
+        # fallback_min_interval_days
+        layout.addWidget(QLabel("Âge Minimum de Secours (jours) [0 = aucun] :"))
+        self.fallback_min_age_input = QSpinBox()
+        self.fallback_min_age_input.setRange(0, 10000)
+        self.fallback_min_age_input.setValue(adv_rules.get("fallback_min_interval_days", 0))
+        self.fallback_min_age_input.setToolTip("Si la règle de rupture est activée et que les vaccins de référence manquent, le vaccin pourra être donné à cet âge minimum (en jours depuis la naissance).")
+        layout.addWidget(self.fallback_min_age_input)
         
         # Buttons
         btn_layout = QHBoxLayout()
@@ -69,21 +137,158 @@ class DoseFormDialog(QDialog):
             rules["min_age_days"] = self.min_age_input.value()
         if self.offset_input.value() > 0:
             rules["offset_from_milestone_days"] = self.offset_input.value()
+        if self.route_input.currentText():
+            rules["administration_route"] = self.route_input.currentText()
+        if self.site_input.currentText():
+            rules["default_injection_site"] = self.site_input.currentText()
+        if self.lifespan_input.value() > 0:
+            rules["vial_lifespan_days"] = self.lifespan_input.value()
             
-        try:
-            adv_text = self.rules_json_input.toPlainText().strip()
-            if adv_text:
-                adv = json.loads(adv_text)
-                if isinstance(adv, dict):
-                    rules.update(adv)
-        except Exception as e:
-            QMessageBox.warning(self, "Erreur JSON", f"Le JSON avancé est invalide (ignoré):\n{e}")
+        # Parse Advanced UI Fields
+        adv = {}
+        if self.is_live_cb.isChecked():
+            adv["is_live"] = True
+        if self.live_conflict_exc_cb.isChecked():
+            adv["live_conflict_exception"] = True
+            
+        # Parse dependencies
+        deps_text = self.dependencies_input.text().strip()
+        if deps_text:
+            parsed_deps = []
+            for part in deps_text.split(","):
+                part = part.strip()
+                if ":" in part:
+                    vax, days = part.split(":", 1)
+                    if days.strip().isdigit():
+                        parsed_deps.append({"vaccine": vax.strip(), "min_interval_days": int(days.strip())})
+            if parsed_deps:
+                adv["dependencies"] = parsed_deps
+
+        # Parse conflicts
+        conflicts_text = self.conflicts_input.text().strip()
+        if conflicts_text:
+            parsed_confs = []
+            for part in conflicts_text.split(";"):
+                part = part.strip()
+                if ":" in part:
+                    vaxes_part, days = part.split(":", 1)
+                    if days.strip().isdigit():
+                        vaxes_list = [v.strip() for v in vaxes_part.split(",") if v.strip()]
+                        if vaxes_list:
+                            parsed_confs.append({"vaccines": vaxes_list, "min_interval_days": int(days.strip())})
+            if parsed_confs:
+                adv["conflicts"] = parsed_confs
+
+        # Parse offset references
+        ref_text = self.offset_ref_input.text().strip()
+        if ref_text:
+            parsed_refs = [v.strip() for v in ref_text.split(",") if v.strip()]
+            if parsed_refs:
+                adv["offset_reference_vaccines"] = parsed_refs
+
+        if self.rupture_fallback_cb.isChecked():
+            adv["rupture_fallback_offset"] = True
+        
+        if self.fallback_min_age_input.value() > 0:
+            adv["fallback_min_interval_days"] = self.fallback_min_age_input.value()
+
+        if adv:
+            rules.update(adv)
             
         return {
             "id": new_id,
             "milestone": new_milestone,
             "rules": rules
         }
+
+class MilestoneManagerDialog(QDialog):
+    def __init__(self, parent=None, milestones_order=[]):
+        super().__init__(parent)
+        self.setWindowTitle("📅 Gestionnaire des Groupes d'âge (Milestones)")
+        self.setMinimumSize(500, 400)
+        # Deep copy to avoid modifying original until saved
+        self.milestones = [{"name": m["name"], "target_days": m["target_days"]} for m in milestones_order]
+        self.setup_ui()
+        self.load_table()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        info = QLabel("Ajoutez ou supprimez des groupes d'âge. Le système les triera automatiquement par ordre chronologique lors de la sauvegarde.")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["Nom du Groupe (ex: '10 Ans')", "Cible en Jours (ex: 3650)"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        btn_layout = QHBoxLayout()
+        btn_add = QPushButton("➕ Ajouter un Groupe")
+        btn_add.clicked.connect(self.add_row)
+        btn_del = QPushButton("🗑️ Supprimer la sélection")
+        btn_del.clicked.connect(self.delete_row)
+        
+        btn_layout.addWidget(btn_add)
+        btn_layout.addWidget(btn_del)
+        layout.addLayout(btn_layout)
+        
+        save_layout = QHBoxLayout()
+        save_btn = QPushButton("Valider")
+        save_btn.clicked.connect(self.accept_data)
+        cancel_btn = QPushButton("Annuler")
+        cancel_btn.clicked.connect(self.reject)
+        
+        save_layout.addWidget(save_btn)
+        save_layout.addWidget(cancel_btn)
+        layout.addLayout(save_layout)
+        
+    def load_table(self):
+        self.table.setRowCount(0)
+        for m in self.milestones:
+            self.add_row(m["name"], str(m["target_days"]))
+            
+    def add_row(self, name="", target="0"):
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(name))
+        
+        target_item = QTableWidgetItem(str(target))
+        self.table.setItem(row, 1, target_item)
+        
+    def delete_row(self):
+        current_row = self.table.currentRow()
+        if current_row >= 0:
+            resp = QMessageBox.question(self, "Confirmation", "Voulez-vous vraiment supprimer ce groupe d'âge ?\nAttention : cela pourrait affecter les vaccins qui y sont liés.",
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if resp == QMessageBox.StandardButton.Yes:
+                self.table.removeRow(current_row)
+                
+    def accept_data(self):
+        new_ms = []
+        for row in range(self.table.rowCount()):
+            name_item = self.table.item(row, 0)
+            target_item = self.table.item(row, 1)
+            
+            if not name_item or not target_item or not name_item.text().strip() or not target_item.text().strip():
+                continue
+                
+            name = name_item.text().strip()
+            try:
+                target_days = int(target_item.text().strip())
+            except ValueError:
+                QMessageBox.warning(self, "Erreur de saisie", f"La valeur cible en jours pour '{name}' doit être un nombre entier.")
+                return
+                
+            new_ms.append({"name": name, "target_days": target_days})
+            
+        # Sort chronologically by target days
+        new_ms.sort(key=lambda x: x["target_days"])
+        self.milestones = new_ms
+        self.accept()
+        
+    def get_data(self):
+        return self.milestones
 
 class VaccineManagerDialog(QDialog):
     def __init__(self, parent=None):
@@ -124,6 +329,11 @@ class VaccineManagerDialog(QDialog):
         btn_layout.addWidget(self.btn_del_vax)
         left_layout.addLayout(btn_layout)
         
+        btn_manage_ms = QPushButton("📅 Gérer les Groupes d'âge")
+        btn_manage_ms.setStyleSheet("background-color: #8e44ad; color: white; padding: 6px;")
+        btn_manage_ms.clicked.connect(self.open_milestone_manager)
+        left_layout.addWidget(btn_manage_ms)
+        
         # RIGHT: Vaccine Details
         right_widget = QWidget()
         self.right_layout = QVBoxLayout(right_widget)
@@ -148,6 +358,11 @@ class VaccineManagerDialog(QDialog):
         self.input_desc.setPlaceholderText("Description du vaccin...")
         form_layout.addWidget(QLabel("Description:"))
         form_layout.addWidget(self.input_desc)
+        
+        self.input_linked = QLineEdit()
+        self.input_linked.setPlaceholderText("Famille liée (ex: DTC_Ag, Polio_Ag)")
+        form_layout.addWidget(QLabel("Famille d'Antigène Liée (Optionnel):"))
+        form_layout.addWidget(self.input_linked)
         
         btn_save_vax = QPushButton("💾 Enregistrer les infos du vaccin")
         btn_save_vax.clicked.connect(self.save_current_vaccine_info)
@@ -215,6 +430,7 @@ class VaccineManagerDialog(QDialog):
         self.input_id.clear()
         self.input_name.clear()
         self.input_desc.clear()
+        self.input_linked.clear()
         self.doses_tree.clear()
         self.btn_add_dose.setEnabled(False)
         self.btn_del_dose.setEnabled(False)
@@ -231,6 +447,7 @@ class VaccineManagerDialog(QDialog):
         self.input_id.setText(vax.get("id", ""))
         self.input_name.setText(vax.get("name", ""))
         self.input_desc.setPlainText(vax.get("description", ""))
+        self.input_linked.setText(vax.get("linked_antigen_family", ""))
         
         self.refresh_doses_tree()
         self.btn_add_dose.setEnabled(True)
@@ -256,6 +473,7 @@ class VaccineManagerDialog(QDialog):
         vax["id"] = self.input_id.text().strip()
         vax["name"] = self.input_name.text().strip()
         vax["description"] = self.input_desc.toPlainText().strip()
+        vax["linked_antigen_family"] = self.input_linked.text().strip()
         
         # update list visual
         self.vax_list.item(self.current_vaccine_index).setText(vax["name"])
@@ -384,6 +602,12 @@ class VaccineManagerDialog(QDialog):
                 QMessageBox.warning(self, "Erreur", "Engine / API non trouvés.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la sauvegarde : {e}")
+
+    def open_milestone_manager(self):
+        dialog = MilestoneManagerDialog(self, self.data.get("milestones_order", []))
+        if dialog.exec():
+            self.data["milestones_order"] = dialog.get_data()
+            QMessageBox.information(self, "Succès", "Groupes d'âge mis à jour temporairement.\nN'oubliez pas de 'Sauvegarder dans la Base de Données' pour appliquer les changements.")
 
 if __name__ == "__main__":
     from PyQt6.QtWidgets import QApplication

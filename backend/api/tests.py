@@ -11,8 +11,7 @@ class VaccineApiTests(TestCase):
             id_label="TEST_123",
             name="John Doe",
             dob="2020-01-01",
-            sexe=0,
-            pneumo_mode="Old"
+            sexe=0
         )
         self.vax = PatientVaccine.objects.create(
             patient=self.patient,

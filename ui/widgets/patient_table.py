@@ -128,8 +128,7 @@ class PatientTableWidget(QTableWidget):
             if today == due_date: is_today = True
             
             # Fetch dynamic list of independent vaccines from the scheduler rules
-            pneumo_mode = settings.get("pneumo_mode", "Old")
-            INDEPENDENT_VAX = engine.scheduler.get_independent_vaccines(pneumo_mode)
+            INDEPENDENT_VAX = engine.scheduler.get_independent_vaccines()
             
             has_independent = any(v[1] in INDEPENDENT_VAX for v in vax_list)
             
@@ -216,12 +215,7 @@ class PatientTableWidget(QTableWidget):
                 if vax_name == "Pneumo3_NewOnly":
                     display_name = "Pneumo3 (6 Mois)"
                 elif vax_name == "Pneumo_Final":
-                    # Re-check patient's actual mode in case global is different
-                    try:
-                        p_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
-                    except:
-                        p_mode = settings.get("pneumo_mode", "Old")
-                    display_name = "Pneumo3 (12 Mois)" if p_mode == "Old" else "Pneumo4 (12 Mois)"
+                    display_name = "Pneumo Rappel"
                     
                 lbl_text = f"      ↳ {display_name}"
                 if obs: lbl_text += " ℹ️"
@@ -253,84 +247,22 @@ class PatientTableWidget(QTableWidget):
                 vax_widget.setPlaceholderText("Date, T, N, E, R, M")
                 vax_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 
-                # Check if it's a pneumo dose that requires specific mode tracking
-                is_pneumo_dose = vax_name.startswith("Pneumo") and status not in ["Done", "Externe"]
-                pneumo_combo = None
-                
-                if is_pneumo_dose:
-                    from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox
-                    container_widget = QWidget()
-                    h_layout = QHBoxLayout(container_widget)
-                    h_layout.setContentsMargins(0, 0, 0, 0)
-                    h_layout.setSpacing(2)
-                    
-                    pneumo_combo = QComboBox()
-                    pneumo_combo.addItems(["Old", "New"])
-                    
-                    # 1. First priority: Check what was saved in the DB observation text.
-                    mode_to_set = None
-                    if obs and "[Type: Old]" in obs: mode_to_set = "Old"
-                    elif obs and "[Type: New]" in obs: mode_to_set = "New"
-                    
-                    # 2. Second priority: Fall back to patient_mode setting.
-                    if not mode_to_set:
-                        mode_to_set = settings.get("pneumo_mode", "Old")
-                        try:
-                            mode_to_set = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
-                        except:
-                            pass
-                            
-                    pneumo_combo.setCurrentText(mode_to_set)
-                    pneumo_combo.setFixedWidth(50)
-                    pneumo_combo.setStyleSheet("font-size: 10px; padding: 2px;")
-                    
-                    h_layout.addWidget(vax_widget)
-                    h_layout.addWidget(pneumo_combo)
-                    actual_widget_to_set = container_widget
-                else:
-                    actual_widget_to_set = vax_widget
+                actual_widget_to_set = vax_widget
                 
                 if vax_name == "Pneumo3_NewOnly":
-                    # Re-check patient's actual mode in case global is different
-                    try:
-                        p_mode = engine.db.get_patient_pneumo_mode(self.main_app.current_patient_id)
-                    except:
-                        p_mode = settings.get("pneumo_mode", "Old")
-                    
-                    if p_mode == "Old":
-                        due_vax_text = "Non requis 🚫"
-                        vax_widget.setReadOnly(True)
-                        vax_widget.setEnabled(False)
-                        vax_widget.setPlaceholderText("-")
-                        if pneumo_combo:
-                            pneumo_combo.hide()
-                        status = "Pending"
-                        is_late = False
-                        is_today = False
+                    # In catchup profiles, Pneumo3_NewOnly might not map to an expected
+                    # date if not required by age, but just in case it's in history:
+                    pass
                     
                 due_vax = QTableWidgetItem(due_vax_text) 
                 due_vax.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 due_vax.setFlags(due_vax.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 
-                # The navigation callback needs a slight wrapper if pneumo_combo is present to pass observation
-                def make_nav_callback(m, v, st, gs, dob_s, combo):
-                    def callback(r, d, is_g=False, c=combo, mv=v, mm=m, mst=st):
-                        # Construct observation from combo if present
-                        obs = f"[Type: {c.currentText()}]" if c and mv.startswith("Pneumo") else ""
-                        self.main_app.handle_navigation(r, d, is_g, mm, mv, mst, gs, dob_s)
-                        
-                        # Apply observation AFTER handle_navigation if it resulted in "Done"
-                        try:
-                            # Re-fetch the status to see if it changed to Done
-                            re_records = self.main_app.engine.get_records(self.main_app.current_patient_id)
-                            for rm, rv, rdue, rstat, rgiven, robs in re_records:
-                                if rm == mm and rv == mv and rstat in ["Done", "Externe"] and c:
-                                    self.main_app.engine.update_vax_status(self.main_app.current_patient_id, rm, rv, rstat, rgiven, f"[Type: {c.currentText()}]")
-                        except:
-                            pass
-                    return callback
-
-                vax_widget.navigationRequested.connect(make_nav_callback(milestone, vax_name, status, given_str, dob_str, pneumo_combo))
+                # The navigation callback
+                vax_widget.navigationRequested.connect(
+                    lambda r, d, is_g=False, m=milestone, v=vax_name, st=status, gs=given_str, dob=dob_str: 
+                    self.main_app.handle_navigation(r, d, is_g, m, v, st, gs, dob)
+                )
 
                 if status in ["Done", "Externe"] and given_str:
                     if given_str == "Inconnue":

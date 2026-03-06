@@ -2,7 +2,7 @@ from core.who_zscore import WhoZScoreCalculator
 from core.scheduler import Scheduler
 from core.api_client import ApiClient
 from datetime import datetime, timedelta
-from core.enums import PneumoProtocol, VaccineStatus
+from core.enums import VaccineStatus
 import uuid
 
 class VaxEngine:
@@ -21,7 +21,7 @@ class VaxEngine:
         if settings_dict and "config" in settings_dict:
             self.config = settings_dict["config"]
         else:
-            self.config = {"pneumo_mode": PneumoProtocol.OLD.value}
+            self.config = {}
             self.save_config()
 
     def save_config(self):
@@ -47,7 +47,7 @@ class VaxEngine:
         return (
             p.get('id_label'), p.get('name'), p.get('dob'), sexe_str,
             p.get('address', ''), p.get('parent_name', ''), p.get('phone', ''),
-            p.get('allergies', ''), p.get('email', ''), p.get('pneumo_mode', 'Old')
+            p.get('allergies', ''), p.get('email', '')
         )
 
     def _vax_dict_to_tuple(self, v):
@@ -95,17 +95,13 @@ class VaxEngine:
         if not p: return None, {}
         return p['dob'], self._vax_list_to_records_dict(p.get('vaccines', []))
 
-    def get_patient_pneumo_mode(self, p_id):
-        p = self.api.get_patient(p_id)
-        return p.get('pneumo_mode', 'Old') if p else 'Old'
-
     def get_records(self, p_id):
         p = self.api.get_patient(p_id)
         if not p: return []
         return [self._vax_dict_to_tuple(v) for v in p.get('vaccines', [])]
 
     # --- MUTATION METHODS ---
-    def register_child(self, name, dob_obj, sexe, address, parent_name="", phone="", allergies="", email="", pneumo_mode="Old", center_schedule={}):
+    def register_child(self, name, dob_obj, sexe, address, parent_name="", phone="", allergies="", email="", center_schedule={}):
         import uuid
         new_id = str(uuid.uuid4())[:8].upper()
         dob_str = dob_obj.strftime("%Y-%m-%d")
@@ -119,8 +115,7 @@ class VaxEngine:
             "parent_name": parent_name,
             "phone": phone,
             "allergies": allergies,
-            "email": email,
-            "pneumo_mode": pneumo_mode
+            "email": email
         }
         self.api.create_patient(patient_data)
         
@@ -140,7 +135,7 @@ class VaxEngine:
         self.recalculate_schedule(new_id, center_schedule)
         return new_id
 
-    def update_patient(self, p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, pneumo_mode, center_schedule={}):
+    def update_patient(self, p_id, name, dob_str, sexe, address, parent_name, phone, allergies, email, center_schedule={}):
         data = {
             "name": name,
             "dob": dob_str,
@@ -149,8 +144,7 @@ class VaxEngine:
             "parent_name": parent_name,
             "phone": phone,
             "allergies": allergies,
-            "email": email,
-            "pneumo_mode": pneumo_mode
+            "email": email
         }
         self.api.patch_patient(p_id, data)
         self.recalculate_schedule(p_id, center_schedule)
@@ -159,23 +153,29 @@ class VaxEngine:
         self.api.delete_patient(p_id)
 
     # --- VACCINE STATUS UPDATES ---
-    def update_vax_status(self, p_id, milestone, vax_name, status, date_given, observation=""):
+    def update_vax_status(self, p_id, milestone, vax_name, status, date_given, observation="", 
+                          lot_number=None, expiration_date=None, diluent_confirmed=None, injection_site=None):
         p = self.api.get_patient(p_id)
         if not p: return
         
         # Find the specific vaccine record ID to patch
         for v in p.get("vaccines", []):
             if v["vaccine_name"] == vax_name and v["milestone_name"] == milestone:
-                self.api.patch_patient_vaccine(v["id"], {
+                payload = {
                     "status": status,
                     "given_date": date_given if date_given else "",
                     "observation": observation
-                })
+                }
+                if lot_number is not None: payload["lot_number"] = lot_number
+                if expiration_date is not None: payload["expiration_date"] = expiration_date
+                if diluent_confirmed is not None: payload["diluent_confirmed"] = diluent_confirmed
+                if injection_site is not None: payload["injection_site"] = injection_site
+                
+                self.api.patch_patient_vaccine(v["id"], payload)
                 break
 
     def update_milestone_status(self, p_id, milestone, status, date_given):
-        pneumo_mode = self.config.get("pneumo_mode", PneumoProtocol.OLD.value)
-        for v in self.scheduler.get_core_vaccines(milestone, pneumo_mode):
+        for v in self.scheduler.get_core_vaccines(milestone):
             self.update_vax_status(p_id, milestone, v, status, date_given)
 
     def mark_rupture(self, p_id, milestone, vax_name, date_str):
@@ -196,6 +196,34 @@ class VaxEngine:
     def cancel_milestone(self, p_id, milestone):
         self.update_milestone_status(p_id, milestone, VaccineStatus.PENDING.value, "")
 
+    def get_eipv_url(self, p_id, vax_name):
+        import urllib.parse
+        p = self.api.get_patient(p_id)
+        if not p: return ""
+        
+        v_record = None
+        for v in p.get("vaccines", []):
+            if v["vaccine_name"] == vax_name:
+                v_record = v
+                break
+                
+        if not v_record: return ""
+        
+        base_url = "https://vigiflow-eforms.who-umc.org/ma/vaccin"
+        params = {
+            "patient_name": p.get("name", ""),
+            "patient_id": p.get("id_label", ""),
+            "vaccine": vax_name,
+            "lot_number": v_record.get("lot_number", ""),
+            "date_given": v_record.get("given_date", "")
+        }
+        
+        # Mark as notified in DB asynchronously or sync depending on implementation
+        self.api.patch_patient_vaccine(v_record["id"], {"eipv_notified": True})
+        
+        encoded = urllib.parse.urlencode({k: v for k, v in params.items() if v})
+        return f"{base_url}?{encoded}"
+
     # --- SCHEDULING & CALCULATIONS ---
     def get_visit_zscores(self, p_id, visit_date_str, weight, height, imc):
         p = self.api.get_patient(p_id)
@@ -206,15 +234,20 @@ class VaxEngine:
         dob_str, records_dict = self.get_patient_dob_and_records(p_id)
         if not dob_str: return
             
-        pneumo_mode = self.get_patient_pneumo_mode(p_id)
+        # Detect if we should use rattling/catch-up logic (e.g. no proof)
+        # Note: in a real environment, no_proof would be stored on Patient.
+        # We can simulate this by checking if they are entirely unvaccinated/no history
+        has_history = any(
+            v["status"] in [VaccineStatus.DONE.value, VaccineStatus.EXTERNE.value] 
+            for v in records_dict.values()
+        )
+        no_proof_flag = False
+        if not has_history and (datetime.now() - datetime.strptime(dob_str, "%Y-%m-%d")).days > 365:
+            # Simple heuristic or config flag
+            no_proof_flag = True
+            
+        expected_vaxes = self.scheduler.generate_expected_vaxes(dob_str, no_proof=no_proof_flag)
         
-        expected_vaxes = []
-        for milestone, target, vaxes in self.scheduler.milestones:
-            for vax in vaxes:
-                if vax == "Pneumo3_NewOnly" and pneumo_mode == PneumoProtocol.OLD.value:
-                    continue
-                expected_vaxes.append((milestone, vax))
-                
         existing_vaxes = set(records_dict.keys())
         expected_vax_names = {v[1] for v in expected_vaxes}
         
@@ -241,7 +274,7 @@ class VaxEngine:
                 
         # Refresh real API records after additions/deletions before calculating updates
         dob_str, records_dict = self.get_patient_dob_and_records(p_id)
-        updates = self.scheduler.calculate_updates(dob_str, records_dict, center_schedule, pneumo_mode)
+        updates = self.scheduler.calculate_updates(dob_str, records_dict, center_schedule)
         
         # Bulk update via loop (Okay for local API)
         for new_due, vax_name in updates:
@@ -257,8 +290,7 @@ class VaxEngine:
     def validate_vaccine_date(self, p_id, vax_name, input_date):
         dob_str, records_dict = self.get_patient_dob_and_records(p_id)
         if not dob_str: return None
-        pneumo_mode = self.get_patient_pneumo_mode(p_id) 
-        return self.scheduler.validate_vaccine_input(dob_str, records_dict, vax_name, pneumo_mode, input_date)
+        return self.scheduler.validate_vaccine_input(dob_str, records_dict, vax_name, input_date=input_date)
 
     # --- VISITS ---
     def add_visit(self, p_id, date_str, weight, height, imc):

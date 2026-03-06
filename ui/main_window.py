@@ -41,7 +41,6 @@ class VaxApp(QWidget):
             "center_type": "Urbain",
             "localities": ["Localité A", "Localité B", "Localité C", "Hors Secteur"],
             "center_schedule": {"default": [0, 1, 2, 3, 4]},
-            "pneumo_mode": "Old",
             "allow_future_dates": False
         }
         
@@ -195,13 +194,9 @@ class VaxApp(QWidget):
     def open_settings(self):
         dialog = SettingsDialog(self, self.settings)
         if dialog.exec():
-            # Check if pneumo mode changed to force a schedule recalculation
-            old_pneumo = self.settings.get("pneumo_mode", "Old")
+            # Check if settings changed to force a schedule recalculation
             self.settings = dialog.get_new_settings()
             self.save_settings()
-            
-            # Sync to engine config memory manually since engine doesn't AutoLoad outside of __init__ unless instructed
-            self.engine.config["pneumo_mode"] = self.settings.get("pneumo_mode", "Old")
                 
             current_addr = self.address_in.currentText()
             self.address_in.clear()
@@ -215,9 +210,6 @@ class VaxApp(QWidget):
                     self.collapsed_groups = set(m[0] for m in self.engine.milestones)
                 else:
                     self.collapsed_groups.clear()
-                    
-                if old_pneumo != self.settings.get("pneumo_mode", "Old"):
-                    self.engine.recalculate_schedule(self.current_patient_id, self.settings["center_schedule"])
                     
                 self.load_table_data(self.current_patient_id)
 
@@ -322,8 +314,7 @@ class VaxApp(QWidget):
         allergies = self.allergies_in.text().strip()
         email = self.email_in.text().strip()
         
-        pneumo_mode = self.settings.get("pneumo_mode", "Old")
-        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, pneumo_mode, self.settings["center_schedule"])
+        new_id = self.engine.register_child(name, parsed_dob, Gender.from_ui(self.sexe_in.currentText()), self.address_in.currentText(), parent, phone, allergies, email, self.settings["center_schedule"])
         
         self.name_in.clear()
         self.date_in.clear()
@@ -569,7 +560,7 @@ class VaxApp(QWidget):
             if status_to_save in ["Done", "Externe"]:
                 error_msg = None
                 if is_group:
-                    core_vaxes = self.engine.scheduler.get_core_vaccines(milestone, self.settings.get("pneumo_mode", "Old"))
+                    core_vaxes = self.engine.scheduler.get_core_vaccines(milestone)
                     for v in core_vaxes:
                         err = self.engine.validate_vaccine_date(self.current_patient_id, v, parsed_date)
                         if err: 

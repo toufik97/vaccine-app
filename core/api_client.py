@@ -30,6 +30,7 @@ class ApiClient:
             return response.json()
         except requests.RequestException as e:
             print(f"API Error [PUT {endpoint}]: {e}\nResponse: {getattr(e.response, 'text', '')}")
+            # Ensure we raise the exception so the caller can check e.response
             raise e
 
     def _delete(self, endpoint):
@@ -61,15 +62,15 @@ class ApiClient:
         """Overwrites or updates settings sequentially"""
         for key, value in config_dict.items():
             val_str = json.dumps(value) if isinstance(value, (dict, list, bool, int, float)) else str(value)
-            # Try to PUT, if 404, then POST
             endpoint = f"settings/{key}/"
-            try:
+            
+            # Check if it exists first
+            exists = self._get(endpoint) is not None
+            if exists:
                 self._put(endpoint, {"key": key, "value": val_str})
-            except requests.RequestException as e:
-                if e.response and e.response.status_code == 404:
-                    self._post("settings/", {"key": key, "value": val_str})
-                else:
-                    raise e
+            else:
+                self._post("settings/", {"key": key, "value": val_str})
+                
         return True
 
     # --- PROTOCOLS ---
@@ -89,6 +90,7 @@ class ApiClient:
                 "id": family["id_name"],
                 "name": family["display_name"],
                 "description": family["description"],
+                "linked_antigen_family": family.get("linked_antigen_family", ""),
                 "doses": []
             }
             
@@ -100,18 +102,32 @@ class ApiClient:
                 offset = d.get("offset_days", 0)
                 if min_age > 0: rules["min_age_days"] = min_age
                 if offset > 0: rules["offset_from_milestone_days"] = offset
+                
+                # Dynamic Model Additions 
+                if d.get("administration_route"): rules["administration_route"] = d["administration_route"]
+                if d.get("default_injection_site"): rules["default_injection_site"] = d["default_injection_site"]
+                if d.get("vial_lifespan_days", 0) > 0: rules["vial_lifespan_days"] = d["vial_lifespan_days"]
+                # Forward the family link for cross-checking
+                rules["linked_antigen_family"] = family.get("linked_antigen_family", "")
+                
                 adv = d.get("advanced_rules", {})
                 if adv: rules.update(adv)
                 
-                base_id = d["id"]
+                base_id = str(d["id"])
                 proto = d.get("pneumo_protocol", "All")
                 
+                # In the Django CharField structure, the base_id is already the precise 
+                # string ID (like "PCV1_Old" or "CPI1"). We inject it directly.
+                
+                # Strip legacy Old/New suffixes so the frontend sees "PCV1"
                 if base_id.endswith("_Old"): base_id = base_id[:-4]
-                elif base_id.endswith("_New"): base_id = base_id[:-4]
+                if base_id.endswith("_New"): base_id = base_id[:-4]
                 
                 if base_id not in dose_map:
-                    dose_map[base_id] = {"id": base_id, "milestone": d["milestone_name"], "rules": {}}
+                    dose_map[base_id] = {"id": base_id, "milestone": d["milestone"], "rules": {}}
                 
+                # For backward compatibility during transition or if old/new rules differ 
+                # slightly, we'll just merge them into one rules object.  
                 if proto in ["Old", "New"]:
                     dose_map[base_id]["rules"][proto] = rules
                 else:
@@ -120,9 +136,21 @@ class ApiClient:
             f_dict["doses"] = list(dose_map.values())
             vaccines.append(f_dict)
             
+        
+        # Load Catchup Profiles from Settings
+        settings_cache = self.get_settings()
+        catchup_profiles = []
+        if settings_cache and "catchup_profiles" in settings_cache:
+            profile_dict = settings_cache["catchup_profiles"]
+            if isinstance(profile_dict, dict):
+                catchup_profiles = list(profile_dict.values())
+            elif isinstance(profile_dict, list):
+                catchup_profiles = profile_dict
+                
         return {
             "milestones_order": milestones_order,
-            "vaccines": vaccines
+            "vaccines": vaccines,
+            "catchup_profiles": catchup_profiles
         }
 
     def save_protocols_to_api(self, data):
