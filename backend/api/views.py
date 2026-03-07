@@ -56,10 +56,15 @@ def upload_protocols(request):
         
     for family_data in data.get("vaccines", []):
         f_id = family_data.get("id", str(uuid.uuid4()))
+        catchup_rules = family_data.get("catchup_rules", [])
+        catchup_rules_json = json.dumps(catchup_rules) if catchup_rules else None
+        
         family = VaccineFamily.objects.create(
             id_name=f_id, 
             display_name=family_data.get("name", ""), 
-            description=family_data.get("description", "")
+            description=family_data.get("description", ""),
+            linked_antigen_family=family_data.get("linked_antigen_family", ""),
+            catchup_rules_json=catchup_rules_json
         )
         
         for dose in family_data.get("doses", []):

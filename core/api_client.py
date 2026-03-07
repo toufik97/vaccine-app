@@ -91,6 +91,7 @@ class ApiClient:
                 "name": family["display_name"],
                 "description": family["description"],
                 "linked_antigen_family": family.get("linked_antigen_family", ""),
+                "catchup_rules": family.get("catchup_rules", []),
                 "doses": []
             }
             

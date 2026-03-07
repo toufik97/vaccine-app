@@ -33,10 +33,19 @@ class VaccineDoseSerializer(serializers.ModelSerializer):
 
 class VaccineFamilySerializer(serializers.ModelSerializer):
     doses = VaccineDoseSerializer(many=True, read_only=True)
+    catchup_rules = serializers.SerializerMethodField()
 
     class Meta:
         model = VaccineFamily
-        fields = ['id_name', 'display_name', 'description', 'linked_antigen_family', 'doses']
+        fields = ['id_name', 'display_name', 'description', 'linked_antigen_family', 'catchup_rules', 'doses']
+
+    def get_catchup_rules(self, obj):
+        if obj.catchup_rules_json:
+            try:
+                return json.loads(obj.catchup_rules_json)
+            except:
+                return []
+        return []
 
 class PatientVaccineSerializer(serializers.ModelSerializer):
     class Meta:

@@ -4,7 +4,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel,
                              QPushButton, QListWidget, QListWidgetItem, QLineEdit, 
                              QTextEdit, QSplitter, QTreeWidget, QTreeWidgetItem,
                              QMessageBox, QInputDialog, QComboBox, QSpinBox, QCheckBox,
-                             QTableWidget, QTableWidgetItem, QHeaderView)
+                             QTableWidget, QTableWidgetItem, QHeaderView,
+                             QTabWidget, QFormLayout, QGroupBox)
 from PyQt6.QtCore import Qt
 
 class DoseFormDialog(QDialog):
@@ -17,106 +18,114 @@ class DoseFormDialog(QDialog):
     def setup_ui(self, milestones):
         layout = QVBoxLayout(self)
         
-        # ID
-        layout.addWidget(QLabel("ID de la Dose (ex: VPO4) :"))
-        self.id_input = QLineEdit(self.dose_data.get("id", ""))
-        layout.addWidget(self.id_input)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
         
-        # Milestone
-        layout.addWidget(QLabel("Groupe d'âge (Milestone) :"))
+        # TAB 1: Essentiel
+        tab_essential = QWidget()
+        essential_layout = QVBoxLayout(tab_essential)
+        
+        group_id = QGroupBox("Identification")
+        form_id = QFormLayout(group_id)
+        
+        self.id_input = QLineEdit(self.dose_data.get("id", ""))
+        form_id.addRow("ID de la Dose (ex: VPO4) :", self.id_input)
+        
         self.milestone_input = QComboBox()
         self.milestone_input.addItems(milestones)
         self.milestone_input.setCurrentText(self.dose_data.get("milestone", ""))
-        layout.addWidget(self.milestone_input)
+        form_id.addRow("Groupe d'âge (Milestone) :", self.milestone_input)
         
-        # Rules (Common)
         rules = self.dose_data.get("rules", {})
         
-        layout.addWidget(QLabel("Âge minimum absolu (en jours) [0 = aucun] :"))
         self.min_age_input = QSpinBox()
         self.min_age_input.setRange(0, 10000)
         self.min_age_input.setValue(rules.get("min_age_days", 0))
-        layout.addWidget(self.min_age_input)
+        form_id.addRow("Âge minimum absolu (jours) [0=aucun] :", self.min_age_input)
         
-        layout.addWidget(QLabel("Décalage après le milestone (en jours) [0 = aucun] :"))
         self.offset_input = QSpinBox()
         self.offset_input.setRange(0, 10000)
         self.offset_input.setValue(rules.get("offset_from_milestone_days", 0))
-        layout.addWidget(self.offset_input)
+        form_id.addRow("Décalage après milestone (jours) [0=aucun] :", self.offset_input)
         
-        # New Admin Parameters
-        layout.addWidget(QLabel("Voie d'administration (ex: IM, SC, Oral) :"))
+        essential_layout.addWidget(group_id)
+        
+        group_admin = QGroupBox("Administration")
+        form_admin = QFormLayout(group_admin)
+        
         self.route_input = QComboBox()
         self.route_input.addItems(["IM", "SC", "ID", "Oral", ""])
         self.route_input.setCurrentText(rules.get("administration_route", ""))
-        layout.addWidget(self.route_input)
-
-        layout.addWidget(QLabel("Site d'injection par défaut :"))
+        form_admin.addRow("Voie d'administration :", self.route_input)
+        
         self.site_input = QComboBox()
         self.site_input.addItems(["Cuisse Droite (Antérolatérale)", "Cuisse Gauche (Antérolatérale)", "Deltoïde (IM)", "Deltoïde Gauche (Sous-cutanée)", "Intradermique (Bras Gauche)", "Oral", ""])
         self.site_input.setCurrentText(rules.get("default_injection_site", ""))
-        layout.addWidget(self.site_input)
-
-        layout.addWidget(QLabel("Durée de vie du flacon (jours) [0 = dose unique] :"))
+        form_admin.addRow("Site d'injection par défaut :", self.site_input)
+        
         self.lifespan_input = QSpinBox()
         self.lifespan_input.setRange(0, 365)
         self.lifespan_input.setValue(rules.get("vial_lifespan_days", 0))
-        layout.addWidget(self.lifespan_input)
-
-        # Advanced Rules Explicit Fields
-        adv_rules = {k: v for k, v in rules.items() if k not in ["min_age_days", "offset_from_milestone_days", "administration_route", "default_injection_site", "vial_lifespan_days"]}
-
-        layout.addWidget(QLabel("<b>Règles Avancées (Options Optionnelles)</b>"))
+        form_admin.addRow("Durée de vie du flacon (jours) [0=unique] :", self.lifespan_input)
         
-        # is_live
+        essential_layout.addWidget(group_admin)
+        essential_layout.addStretch()
+        self.tabs.addTab(tab_essential, "Essentiel")
+        
+        # TAB 2: Règles Avancées
+        tab_adv = QWidget()
+        adv_layout = QVBoxLayout(tab_adv)
+        
+        adv_rules = {k: v for k, v in rules.items() if k not in ["min_age_days", "offset_from_milestone_days", "administration_route", "default_injection_site", "vial_lifespan_days"]}
+        
+        group_live = QGroupBox("Vaccin Vivant")
+        form_live = QFormLayout(group_live)
         self.is_live_cb = QCheckBox("Vaccin Vivant Atténué")
         self.is_live_cb.setChecked(adv_rules.get("is_live", False))
-        self.is_live_cb.setToolTip("Cochez si le vaccin est vivant (ex: RR, VPO, BCG, Amarile). Active la règle des 28 jours avec d'autres vaccins vivants.")
-        layout.addWidget(self.is_live_cb)
+        self.is_live_cb.setToolTip("Active la règle des 28 jours avec d'autres vaccins vivants.")
+        form_live.addRow("", self.is_live_cb)
         
-        # live_conflict_exception
         self.live_conflict_exc_cb = QCheckBox("Exception au Conflit Vivant (ex: VPO)")
         self.live_conflict_exc_cb.setChecked(adv_rules.get("live_conflict_exception", False))
-        self.live_conflict_exc_cb.setToolTip("Cochez si le vaccin est vivant mais peut être administré sans délai de 28 jours après un autre vaccin vivant.")
-        layout.addWidget(self.live_conflict_exc_cb)
-
-        # dependencies
-        layout.addWidget(QLabel("Dépendances (Format: VaxA:30, VaxB:60) :"))
+        form_live.addRow("", self.live_conflict_exc_cb)
+        adv_layout.addWidget(group_live)
+        
+        group_deps = QGroupBox("Dépendances & Conflits")
+        form_deps = QFormLayout(group_deps)
+        
         self.dependencies_input = QLineEdit()
-        self.dependencies_input.setToolTip("Vaccins requis en amont. Format: 'NomVaccin:Jours'.\nExemple: 'Penta1:28' signifie 'Doit être donné au moins 28 jours après Penta1'.\nSéparez par des virgules pour plusieurs dépendances.")
+        self.dependencies_input.setPlaceholderText("ex: Penta1:28, VPO1:30")
         deps_str = ", ".join([f"{d['vaccine']}:{d['min_interval_days']}" for d in adv_rules.get("dependencies", [])])
         self.dependencies_input.setText(deps_str)
-        layout.addWidget(self.dependencies_input)
-
-        # conflicts
-        layout.addWidget(QLabel("Conflits PNI (Format: VaxA,VaxB:28) :"))
+        form_deps.addRow("Dépendances :", self.dependencies_input)
+        
         self.conflicts_input = QLineEdit()
-        self.conflicts_input.setToolTip("Vaccins qui ne peuvent pas être donnés en même temps ou nécessitent un intervalle.\nFormat: 'VaxConf1,VaxConf2:JoursDIntervalle'.\nExemple: 'RR,Amarile:28'")
+        self.conflicts_input.setPlaceholderText("ex: RR,Amarile:28")
         conflicts_str = "; ".join([f"{','.join(c['vaccines'])}:{c['min_interval_days']}" for c in adv_rules.get("conflicts", [])])
         self.conflicts_input.setText(conflicts_str)
-        layout.addWidget(self.conflicts_input)
-
-        # offset_reference_vaccines
-        layout.addWidget(QLabel("Vaccins de Référence pour le Décalage :"))
+        form_deps.addRow("Conflits PNI :", self.conflicts_input)
+        adv_layout.addWidget(group_deps)
+        
+        group_offset = QGroupBox("Décalage & Rupture")
+        form_offset = QFormLayout(group_offset)
+        
         self.offset_ref_input = QLineEdit()
-        self.offset_ref_input.setToolTip("Si un décalage (offset) est défini en haut, indiquez après quels vaccins s'applique le décalage.\nLaissez vide pour utiliser tous les autres vaccins du groupe. Séparez par des virgules.\nExemple: 'Penta3, VPI'")
+        self.offset_ref_input.setPlaceholderText("ex: Penta3, VPI")
         ref_vaxes = adv_rules.get("offset_reference_vaccines", [])
         self.offset_ref_input.setText(", ".join(ref_vaxes))
-        layout.addWidget(self.offset_ref_input)
-
-        # rupture_fallback_offset
+        form_offset.addRow("Vaccins de Référence :", self.offset_ref_input)
+        
         self.rupture_fallback_cb = QCheckBox("Utiliser le Décalage comme Exception de Rupture")
         self.rupture_fallback_cb.setChecked(adv_rules.get("rupture_fallback_offset", False))
-        self.rupture_fallback_cb.setToolTip("Si coché, le décalage sera ignoré et le 'Âge Minimum de Secours' sera utilisé si les vaccins de référence sont marqués 'En Rupture'.")
-        layout.addWidget(self.rupture_fallback_cb)
-
-        # fallback_min_interval_days
-        layout.addWidget(QLabel("Âge Minimum de Secours (jours) [0 = aucun] :"))
+        form_offset.addRow("", self.rupture_fallback_cb)
+        
         self.fallback_min_age_input = QSpinBox()
         self.fallback_min_age_input.setRange(0, 10000)
         self.fallback_min_age_input.setValue(adv_rules.get("fallback_min_interval_days", 0))
-        self.fallback_min_age_input.setToolTip("Si la règle de rupture est activée et que les vaccins de référence manquent, le vaccin pourra être donné à cet âge minimum (en jours depuis la naissance).")
-        layout.addWidget(self.fallback_min_age_input)
+        form_offset.addRow("Âge Min de Secours (j) [0=aucun] :", self.fallback_min_age_input)
+        adv_layout.addWidget(group_offset)
+        adv_layout.addStretch()
+        self.tabs.addTab(tab_adv, "Règles Avancées")
         
         # Buttons
         btn_layout = QHBoxLayout()
@@ -340,53 +349,77 @@ class VaccineManagerDialog(QDialog):
         
         self.right_layout.addWidget(QLabel("<b>Détails du Vaccin</b>"))
         
-        # Properties
-        form_layout = QVBoxLayout()
+        self.tabs = QTabWidget()
+        self.right_layout.addWidget(self.tabs)
+        
+        # TAB 1: Infos Générales
+        tab_infos = QWidget()
+        form_layout = QFormLayout(tab_infos)
         
         self.input_id = QLineEdit()
         self.input_id.setPlaceholderText("ID interne (ex: vpo, bcg)")
-        form_layout.addWidget(QLabel("ID Interne:"))
-        form_layout.addWidget(self.input_id)
+        form_layout.addRow("ID Interne:", self.input_id)
         
         self.input_name = QLineEdit()
         self.input_name.setPlaceholderText("Nom (ex: VPO, BCG)")
-        form_layout.addWidget(QLabel("Nom Affiché:"))
-        form_layout.addWidget(self.input_name)
+        form_layout.addRow("Nom Affiché:", self.input_name)
         
         self.input_desc = QTextEdit()
         self.input_desc.setMaximumHeight(60)
         self.input_desc.setPlaceholderText("Description du vaccin...")
-        form_layout.addWidget(QLabel("Description:"))
-        form_layout.addWidget(self.input_desc)
+        form_layout.addRow("Description:", self.input_desc)
         
         self.input_linked = QLineEdit()
         self.input_linked.setPlaceholderText("Famille liée (ex: DTC_Ag, Polio_Ag)")
-        form_layout.addWidget(QLabel("Famille d'Antigène Liée (Optionnel):"))
-        form_layout.addWidget(self.input_linked)
+        form_layout.addRow("Famille d'Antigène Liée (Optionnel):", self.input_linked)
         
-        btn_save_vax = QPushButton("💾 Enregistrer les infos du vaccin")
-        btn_save_vax.clicked.connect(self.save_current_vaccine_info)
-        form_layout.addWidget(btn_save_vax)
+        self.tabs.addTab(tab_infos, "Infos Générales")
         
-        self.right_layout.addLayout(form_layout)
-        self.right_layout.addSpacing(15)
+        # TAB 2: Doses & Calendrier
+        tab_doses = QWidget()
+        doses_layout = QVBoxLayout(tab_doses)
         
-        # Doses Tree
-        self.right_layout.addWidget(QLabel("<b>Doses Administrées</b>"))
         self.doses_tree = QTreeWidget()
         self.doses_tree.setHeaderLabels(["Dose ID", "Groupe d'âge (Milestone)", "Règles"])
         self.doses_tree.itemDoubleClicked.connect(self.edit_dose)
-        self.right_layout.addWidget(self.doses_tree)
+        doses_layout.addWidget(self.doses_tree)
         
         dose_btn_layout = QHBoxLayout()
         self.btn_add_dose = QPushButton("➕ Ajouter Dose")
         self.btn_add_dose.clicked.connect(self.add_dose)
         self.btn_del_dose = QPushButton("🗑️ Supprimer Dose")
         self.btn_del_dose.clicked.connect(self.delete_dose)
-        
         dose_btn_layout.addWidget(self.btn_add_dose)
         dose_btn_layout.addWidget(self.btn_del_dose)
-        self.right_layout.addLayout(dose_btn_layout)
+        doses_layout.addLayout(dose_btn_layout)
+        
+        self.tabs.addTab(tab_doses, "Doses & Calendrier")
+        
+        # TAB 3: Rattrapage
+        tab_catchup = QWidget()
+        catchup_layout = QVBoxLayout(tab_catchup)
+        
+        self.catchup_table = QTableWidget(0, 6)
+        self.catchup_table.setHorizontalHeaderLabels(["Label Tranche", "Min (jours)", "Max (jours)", "Doses", "Produit", "Observations"])
+        self.catchup_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        catchup_layout.addWidget(self.catchup_table)
+        
+        catchup_btn_layout = QHBoxLayout()
+        self.btn_add_catchup = QPushButton("➕ Ajouter Règle")
+        self.btn_add_catchup.clicked.connect(self.add_catchup_rule)
+        self.btn_del_catchup = QPushButton("🗑️ Supprimer Règle")
+        self.btn_del_catchup.clicked.connect(self.delete_catchup_rule)
+        catchup_btn_layout.addWidget(self.btn_add_catchup)
+        catchup_btn_layout.addWidget(self.btn_del_catchup)
+        catchup_layout.addLayout(catchup_btn_layout)
+        
+        self.tabs.addTab(tab_catchup, "Rattrapage (Catch-up)")
+        
+        # Save Current Vaccine Buttons
+        btn_save_vax = QPushButton("💾 Enregistrer les Modifications du Vaccin (BDD Temporaire)")
+        btn_save_vax.setStyleSheet("background-color: #2980b9; color: white; padding: 6px;")
+        btn_save_vax.clicked.connect(self.save_current_vaccine_info)
+        self.right_layout.addWidget(btn_save_vax)
         
         # Add to splitter
         splitter.addWidget(left_widget)
@@ -432,8 +465,11 @@ class VaccineManagerDialog(QDialog):
         self.input_desc.clear()
         self.input_linked.clear()
         self.doses_tree.clear()
+        self.catchup_table.setRowCount(0)
         self.btn_add_dose.setEnabled(False)
         self.btn_del_dose.setEnabled(False)
+        self.btn_add_catchup.setEnabled(False)
+        self.btn_del_catchup.setEnabled(False)
         self.current_vaccine_index = -1
         
     def on_vaccine_selected(self, index):
@@ -450,8 +486,23 @@ class VaccineManagerDialog(QDialog):
         self.input_linked.setText(vax.get("linked_antigen_family", ""))
         
         self.refresh_doses_tree()
+        
+        # Populate catchup rules
+        self.catchup_table.setRowCount(0)
+        for rule in vax.get("catchup_rules", []):
+            row = self.catchup_table.rowCount()
+            self.catchup_table.insertRow(row)
+            self.catchup_table.setItem(row, 0, QTableWidgetItem(str(rule.get("label", ""))))
+            self.catchup_table.setItem(row, 1, QTableWidgetItem(str(rule.get("min_age_days", "0"))))
+            self.catchup_table.setItem(row, 2, QTableWidgetItem(str(rule.get("max_age_days", "9999"))))
+            self.catchup_table.setItem(row, 3, QTableWidgetItem(str(rule.get("doses", "0"))))
+            self.catchup_table.setItem(row, 4, QTableWidgetItem(str(rule.get("product", ""))))
+            self.catchup_table.setItem(row, 5, QTableWidgetItem(str(rule.get("observation", ""))))
+            
         self.btn_add_dose.setEnabled(True)
         self.btn_del_dose.setEnabled(True)
+        self.btn_add_catchup.setEnabled(True)
+        self.btn_del_catchup.setEnabled(True)
         
     def refresh_doses_tree(self):
         self.doses_tree.clear()
@@ -475,9 +526,46 @@ class VaccineManagerDialog(QDialog):
         vax["description"] = self.input_desc.toPlainText().strip()
         vax["linked_antigen_family"] = self.input_linked.text().strip()
         
+        # Parse Catch-up Rules from Table
+        catchup_rules = []
+        for row in range(self.catchup_table.rowCount()):
+            label = self.catchup_table.item(row, 0).text() if self.catchup_table.item(row, 0) else ""
+            min_age = self.catchup_table.item(row, 1).text() if self.catchup_table.item(row, 1) else "0"
+            max_age = self.catchup_table.item(row, 2).text() if self.catchup_table.item(row, 2) else "9999"
+            doses = self.catchup_table.item(row, 3).text() if self.catchup_table.item(row, 3) else "0"
+            product = self.catchup_table.item(row, 4).text() if self.catchup_table.item(row, 4) else ""
+            obs = self.catchup_table.item(row, 5).text() if self.catchup_table.item(row, 5) else ""
+            
+            catchup_rules.append({
+                "label": label,
+                "min_age_days": int(min_age) if min_age.isdigit() else 0,
+                "max_age_days": int(max_age) if max_age.isdigit() else 9999,
+                "doses": int(doses) if doses.isdigit() else 0,
+                "product": product,
+                "observation": obs
+            })
+            
+        vax["catchup_rules"] = catchup_rules
+        
         # update list visual
         self.vax_list.item(self.current_vaccine_index).setText(vax["name"])
-        QMessageBox.information(self, "Succès", "Informations temporaires enregistrées.")
+        QMessageBox.information(self, "Succès", "Informations temporaires enregistrées.\nN'oubliez pas le bouton vert Global pour persister les changements en base.")
+        
+    def add_catchup_rule(self):
+        if self.current_vaccine_index < 0: return
+        row = self.catchup_table.rowCount()
+        self.catchup_table.insertRow(row)
+        self.catchup_table.setItem(row, 0, QTableWidgetItem("Nouvelle Tranche"))
+        self.catchup_table.setItem(row, 1, QTableWidgetItem("0"))
+        self.catchup_table.setItem(row, 2, QTableWidgetItem("365"))
+        self.catchup_table.setItem(row, 3, QTableWidgetItem("1"))
+        self.catchup_table.setItem(row, 4, QTableWidgetItem(""))
+        self.catchup_table.setItem(row, 5, QTableWidgetItem(""))
+        
+    def delete_catchup_rule(self):
+        curr = self.catchup_table.currentRow()
+        if curr >= 0:
+            self.catchup_table.removeRow(curr)
         
     def add_vaccine(self):
         name, ok = QInputDialog.getText(self, "Nouveau Vaccin", "Nom de la famille de vaccin :")

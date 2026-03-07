@@ -13,6 +13,7 @@ class VaccineFamily(models.Model):
     display_name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     linked_antigen_family = models.CharField(max_length=100, blank=True, null=True)
+    catchup_rules_json = models.TextField(blank=True, null=True)
 
     class Meta:
         verbose_name = 'Vaccine Family'
